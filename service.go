@@ -6,32 +6,46 @@ import (
 	"errors"
 
 	"github.com/flarexio/mdm-server/checkin"
+	"github.com/flarexio/mdm-server/command"
 	"github.com/flarexio/mdm-server/enrollment"
 )
 
 var ErrUnsupportedCheckin = errors.New("unsupported check-in message")
 
-// Service handles the MDM check-in channel. Every method takes the AUTHENTICATED
+// Service handles both MDM channels. Every method takes the AUTHENTICATED
 // enrollment identity (resolved from the mTLS client certificate) separately from
 // the message: the identity is the certificate's, never the device-claimed body.
 // The message supplies data only.
 type Service interface {
+	// Check-in channel.
 	Authenticate(id enrollment.ID, msg *checkin.Authenticate) error
 	TokenUpdate(id enrollment.ID, msg *checkin.TokenUpdate) error
 	CheckOut(id enrollment.ID, msg *checkin.CheckOut) error
 
 	// CheckIn dispatches a decoded check-in message to the matching handler.
 	CheckIn(id enrollment.ID, msg any) error
+
+	// Command channel.
+
+	// Enqueue queues a command for later delivery. It does not reach the device
+	// until the device next polls; waking it (APNs) is a separate concern.
+	Enqueue(id enrollment.ID, cmd *command.Command) error
+
+	// Command handles one turn of the command/report loop: it records the device's
+	// result (or Idle poll) and returns the next command to run, or nil if the
+	// queue is empty.
+	Command(id enrollment.ID, result *command.Result) (*command.Command, error)
 }
 
 type ServiceMiddleware func(Service) Service
 
-func NewService(enrollments enrollment.Repository) Service {
-	return &service{enrollments}
+func NewService(enrollments enrollment.Repository, commands command.Queue) Service {
+	return &service{enrollments, commands}
 }
 
 type service struct {
 	enrollments enrollment.Repository
+	commands    command.Queue
 }
 
 // Authenticate begins (or restarts) an enrollment. The identity is the cert's; the
@@ -92,4 +106,20 @@ func (svc *service) CheckIn(id enrollment.ID, msg any) error {
 	default:
 		return ErrUnsupportedCheckin
 	}
+}
+
+func (svc *service) Enqueue(id enrollment.ID, cmd *command.Command) error {
+	return svc.commands.Enqueue(string(id), cmd)
+}
+
+// Command runs one turn of the command/report loop. It records the incoming result
+// (Idle is a no-op in the queue) and returns the next command. skipNotNow is set
+// when the device just deferred a command, so the server does not re-offer it in
+// the same connection — it will be retried on the next poll.
+func (svc *service) Command(id enrollment.ID, result *command.Result) (*command.Command, error) {
+	if err := svc.commands.Report(string(id), result); err != nil {
+		return nil, err
+	}
+
+	return svc.commands.Next(string(id), result.Status == command.NotNow)
 }

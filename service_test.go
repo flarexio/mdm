@@ -18,7 +18,10 @@ func newService(t *testing.T) (mdm.Service, enrollment.Repository) {
 	repo, err := inmem.NewEnrollmentRepository()
 	require.NoError(t, err)
 
-	return mdm.NewService(repo), repo
+	queue, err := inmem.NewCommandQueue()
+	require.NoError(t, err)
+
+	return mdm.NewService(repo, queue), repo
 }
 
 func TestCheckInLifecycle(t *testing.T) {
