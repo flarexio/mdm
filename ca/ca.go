@@ -63,6 +63,16 @@ func New(commonName string) (*CA, error) {
 	return &CA{Certificate: cert, key: key}, nil
 }
 
+// SCEPIdentity returns the certificate and key the SCEP protocol layer uses to
+// decrypt enveloped requests and sign its PKCS#7 responses.
+//
+// In this learning vehicle that is the CA key pair itself. A production deployment
+// would give the SCEP front-end (RA) its own key and keep the CA signing key in an
+// HSM, never handing it to a network-facing service.
+func (ca *CA) SCEPIdentity() (*x509.Certificate, *rsa.PrivateKey) {
+	return ca.Certificate, ca.key
+}
+
 // SignOptions tunes the certificate produced by Sign.
 type SignOptions struct {
 	// TTL is how long the issued certificate is valid. Defaults to one year.
