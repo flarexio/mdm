@@ -1,6 +1,7 @@
 package mdm_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -8,11 +9,29 @@ import (
 
 	mdm "github.com/flarexio/mdm-server"
 	"github.com/flarexio/mdm-server/checkin"
+	"github.com/flarexio/mdm-server/command"
 	"github.com/flarexio/mdm-server/enrollment"
 	"github.com/flarexio/mdm-server/persistence/inmem"
+	"github.com/flarexio/mdm-server/push"
 )
 
+// fakePusher records the pushes the service makes and can be made to fail.
+type fakePusher struct {
+	pushed []push.Target
+	err    error
+}
+
+func (f *fakePusher) Push(_ context.Context, t push.Target) error {
+	f.pushed = append(f.pushed, t)
+	return f.err
+}
+
 func newService(t *testing.T) (mdm.Service, enrollment.Repository) {
+	svc, repo, _ := newServiceWithPush(t)
+	return svc, repo
+}
+
+func newServiceWithPush(t *testing.T) (mdm.Service, enrollment.Repository, *fakePusher) {
 	t.Helper()
 
 	repo, err := inmem.NewEnrollmentRepository()
@@ -21,7 +40,23 @@ func newService(t *testing.T) (mdm.Service, enrollment.Repository) {
 	queue, err := inmem.NewCommandQueue()
 	require.NoError(t, err)
 
-	return mdm.NewService(repo, queue), repo
+	pusher := &fakePusher{}
+	return mdm.NewService(repo, queue, pusher), repo, pusher
+}
+
+// enroll runs a device through Authenticate + TokenUpdate so it is pushable.
+func enroll(t *testing.T, svc mdm.Service, id enrollment.ID) {
+	t.Helper()
+	require.NoError(t, svc.Authenticate(id, &checkin.Authenticate{
+		Enrollment: checkin.Enrollment{UDID: "UDID-" + string(id)},
+	}))
+	require.NoError(t, svc.TokenUpdate(id, &checkin.TokenUpdate{
+		Push: checkin.Push{
+			Topic:     "com.apple.mgmt.External.abc",
+			PushMagic: "MAGIC-123",
+			Token:     []byte{0x01, 0x02, 0x03, 0x04},
+		},
+	}))
 }
 
 func TestCheckInLifecycle(t *testing.T) {
@@ -110,4 +145,42 @@ func TestCheckIn_Dispatch(t *testing.T) {
 
 	// An unmodelled message type is rejected.
 	assert.ErrorIs(t, svc.CheckIn(id, "not a check-in"), mdm.ErrUnsupportedCheckin)
+}
+
+func TestEnqueueWakesPushableDevice(t *testing.T) {
+	svc, _, pusher := newServiceWithPush(t)
+	const id enrollment.ID = "device-0001"
+	enroll(t, svc, id)
+
+	require.NoError(t, svc.Enqueue(id, &command.Command{CommandUUID: "cmd-1"}))
+
+	require.Len(t, pusher.pushed, 1, "enqueue wakes the device")
+	assert.Equal(t, "01020304", pusher.pushed[0].Token)
+	assert.Equal(t, "com.apple.mgmt.External.abc", pusher.pushed[0].Topic)
+	assert.Equal(t, "MAGIC-123", pusher.pushed[0].PushMagic)
+}
+
+func TestEnqueueSkipsPushWhenNotPushable(t *testing.T) {
+	svc, _, pusher := newServiceWithPush(t)
+	const id enrollment.ID = "device-0001"
+
+	// Authenticated but no TokenUpdate yet: not reachable.
+	require.NoError(t, svc.Authenticate(id, &checkin.Authenticate{}))
+	require.NoError(t, svc.Enqueue(id, &command.Command{CommandUUID: "cmd-1"}))
+
+	assert.Empty(t, pusher.pushed, "a pending device cannot be pushed; the command waits")
+}
+
+func TestEnqueueReconcilesOnUnregistered(t *testing.T) {
+	svc, repo, pusher := newServiceWithPush(t)
+	pusher.err = &push.Error{Status: 410, Reason: "Unregistered"}
+
+	const id enrollment.ID = "device-0001"
+	enroll(t, svc, id)
+
+	require.NoError(t, svc.Enqueue(id, &command.Command{CommandUUID: "cmd-1"}))
+
+	e, err := repo.Find(id)
+	require.NoError(t, err)
+	assert.Equal(t, enrollment.Removed, e.Status, "a dead token reconciles the enrollment to Removed")
 }

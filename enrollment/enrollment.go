@@ -9,6 +9,7 @@
 package enrollment
 
 import (
+	"encoding/hex"
 	"errors"
 	"strings"
 	"time"
@@ -72,6 +73,11 @@ type Push struct {
 	Topic     string `json:"topic"`
 	PushMagic string `json:"push_magic"`
 	Token     []byte `json:"token"`
+}
+
+// TokenHex returns the APNs device token in the hex form APNs addressing expects.
+func (p Push) TokenHex() string {
+	return hex.EncodeToString(p.Token)
 }
 
 // Enrollment is the aggregate root.

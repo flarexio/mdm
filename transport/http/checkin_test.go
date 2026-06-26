@@ -54,7 +54,7 @@ func mdmHandler(t *testing.T) (http.Handler, enrollment.Repository) {
 	queue, err := inmem.NewCommandQueue()
 	require.NoError(t, err)
 
-	svc := mdm.NewService(repo, queue)
+	svc := mdm.NewService(repo, queue, nopPusher{})
 	h := transhttp.RequireIdentity(transhttp.ClientIdentity)(transhttp.CheckInHandler(svc))
 
 	return h, repo

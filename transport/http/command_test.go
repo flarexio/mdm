@@ -1,6 +1,7 @@
 package http_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,8 +13,14 @@ import (
 	"github.com/flarexio/mdm-server/command"
 	"github.com/flarexio/mdm-server/enrollment"
 	"github.com/flarexio/mdm-server/persistence/inmem"
+	"github.com/flarexio/mdm-server/push"
 	transhttp "github.com/flarexio/mdm-server/transport/http"
 )
+
+// nopPusher is a no-op Pusher for transport tests that do not exercise APNs.
+type nopPusher struct{}
+
+func (nopPusher) Push(context.Context, push.Target) error { return nil }
 
 func deviceInfoCommand(t *testing.T, uuid string) *command.Command {
 	t.Helper()
@@ -44,7 +51,7 @@ func commandSetup(t *testing.T) (http.Handler, mdm.Service) {
 	queue, err := inmem.NewCommandQueue()
 	require.NoError(t, err)
 
-	svc := mdm.NewService(repo, queue)
+	svc := mdm.NewService(repo, queue, nopPusher{})
 	h := transhttp.RequireIdentity(transhttp.ClientIdentity)(transhttp.CommandHandler(svc))
 
 	return h, svc

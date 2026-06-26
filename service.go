@@ -3,11 +3,13 @@
 package mdm
 
 import (
+	"context"
 	"errors"
 
 	"github.com/flarexio/mdm-server/checkin"
 	"github.com/flarexio/mdm-server/command"
 	"github.com/flarexio/mdm-server/enrollment"
+	"github.com/flarexio/mdm-server/push"
 )
 
 var ErrUnsupportedCheckin = errors.New("unsupported check-in message")
@@ -27,8 +29,8 @@ type Service interface {
 
 	// Command channel.
 
-	// Enqueue queues a command for later delivery. It does not reach the device
-	// until the device next polls; waking it (APNs) is a separate concern.
+	// Enqueue queues a command and wakes the device via APNs so it connects and
+	// pulls it. If the device cannot be woken the command waits until its next poll.
 	Enqueue(id enrollment.ID, cmd *command.Command) error
 
 	// Command handles one turn of the command/report loop: it records the device's
@@ -39,13 +41,14 @@ type Service interface {
 
 type ServiceMiddleware func(Service) Service
 
-func NewService(enrollments enrollment.Repository, commands command.Queue) Service {
-	return &service{enrollments, commands}
+func NewService(enrollments enrollment.Repository, commands command.Queue, pusher push.Pusher) Service {
+	return &service{enrollments, commands, pusher}
 }
 
 type service struct {
 	enrollments enrollment.Repository
 	commands    command.Queue
+	pusher      push.Pusher
 }
 
 // Authenticate begins (or restarts) an enrollment. The identity is the cert's; the
@@ -109,7 +112,48 @@ func (svc *service) CheckIn(id enrollment.ID, msg any) error {
 }
 
 func (svc *service) Enqueue(id enrollment.ID, cmd *command.Command) error {
-	return svc.commands.Enqueue(string(id), cmd)
+	if err := svc.commands.Enqueue(string(id), cmd); err != nil {
+		return err
+	}
+
+	return svc.wake(id)
+}
+
+// wake sends an APNs push so the device connects and pulls the queued command.
+//
+// It is tolerant: a device that is unknown or not yet pushable is skipped without
+// error — the command simply waits in the queue until the device next polls. A push
+// that reports the token is dead (Unregistered) reconciles the enrollment to
+// Removed, recovering the state a missing CheckOut would have left stale.
+func (svc *service) wake(id enrollment.ID) error {
+	e, err := svc.enrollments.Find(id)
+	if err != nil {
+		if errors.Is(err, enrollment.ErrEnrollmentNotFound) {
+			return nil
+		}
+		return err
+	}
+
+	if !e.CanPush() {
+		return nil
+	}
+
+	err = svc.pusher.Push(context.Background(), push.Target{
+		Token:     e.Push.TokenHex(),
+		Topic:     e.Push.Topic,
+		PushMagic: e.Push.PushMagic,
+	})
+	if err == nil {
+		return nil
+	}
+
+	var apnsErr *push.Error
+	if errors.As(err, &apnsErr) && apnsErr.Unregistered() {
+		e.CheckOut()
+		return svc.enrollments.Store(e)
+	}
+
+	return err
 }
 
 // Command runs one turn of the command/report loop. It records the incoming result
