@@ -1,0 +1,13 @@
+/.vscode/
+/release/
+/build/
+/certs/
+
+# build artifacts — never build binaries into the repo root.
+# anchored with a leading slash so it does NOT ignore the cmd/mdm-server/ source dir.
+/mdm-server
+config.yaml
+*.db
+*.p8
+*.p12
+*.mobileconfig
