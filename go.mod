@@ -3,6 +3,7 @@ module github.com/flarexio/mdm-server
 go 1.26.3
 
 require (
+	github.com/flarexio/core v1.0.6
 	github.com/go-kit/kit v0.4.0
 	github.com/google/uuid v1.6.0
 	github.com/micromdm/plist v0.2.2
@@ -20,11 +21,16 @@ require (
 	github.com/gorilla/context v0.0.0-20160226214623-1ea25387ff6f // indirect
 	github.com/gorilla/mux v1.4.0 // indirect
 	github.com/groob/finalizer v0.0.0-20170707115354-4c2ed49aabda // indirect
+	github.com/klauspost/compress v1.18.0 // indirect
+	github.com/nats-io/nats.go v1.44.0 // indirect
+	github.com/nats-io/nkeys v0.4.11 // indirect
+	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/pkg/errors v0.8.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/smallstep/pkcs7 v0.1.1 // indirect
-	go.uber.org/multierr v1.10.0 // indirect
-	golang.org/x/crypto v0.32.0 // indirect
-	golang.org/x/net v0.25.0 // indirect
+	go.uber.org/multierr v1.11.0 // indirect
+	golang.org/x/crypto v0.40.0 // indirect
+	golang.org/x/net v0.41.0 // indirect
+	golang.org/x/sys v0.34.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
