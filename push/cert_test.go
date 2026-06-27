@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/flarexio/mdm-server/push"
+	"github.com/flarexio/mdm/push"
 )
 
 var oidUID = asn1.ObjectIdentifier{0, 9, 2342, 19200300, 100, 1, 1}

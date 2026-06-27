@@ -1,4 +1,4 @@
-module github.com/flarexio/mdm-server
+module github.com/flarexio/mdm
 
 go 1.26.3
 

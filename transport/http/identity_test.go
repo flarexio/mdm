@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/flarexio/mdm-server/enrollment"
-	transhttp "github.com/flarexio/mdm-server/transport/http"
+	"github.com/flarexio/mdm/enrollment"
+	transhttp "github.com/flarexio/mdm/transport/http"
 )
 
 // reqWithTLS builds a request whose TLS state carries a client certificate with the

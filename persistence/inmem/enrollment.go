@@ -5,7 +5,7 @@ import (
 
 	"github.com/flarexio/core/events"
 
-	"github.com/flarexio/mdm-server/enrollment"
+	"github.com/flarexio/mdm/enrollment"
 )
 
 // NewEnrollmentRepository returns an in-memory enrollment.Repository. A scaled

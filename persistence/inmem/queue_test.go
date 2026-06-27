@@ -6,8 +6,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/flarexio/mdm-server/command"
-	"github.com/flarexio/mdm-server/persistence/inmem"
+	"github.com/flarexio/mdm/command"
+	"github.com/flarexio/mdm/persistence/inmem"
 )
 
 func cmd(uuid string) *command.Command {

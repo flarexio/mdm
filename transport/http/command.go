@@ -4,8 +4,8 @@ import (
 	"io"
 	"net/http"
 
-	mdm "github.com/flarexio/mdm-server"
-	"github.com/flarexio/mdm-server/command"
+	"github.com/flarexio/mdm"
+	"github.com/flarexio/mdm/command"
 )
 
 // mdmContentType is the content type Apple uses for MDM protocol plists.

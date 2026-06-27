@@ -3,7 +3,7 @@ package inmem
 import (
 	"sync"
 
-	"github.com/flarexio/mdm-server/command"
+	"github.com/flarexio/mdm/command"
 )
 
 // NewCommandQueue returns an in-memory command.Queue. A scaled deployment swaps in

@@ -6,10 +6,10 @@ import (
 	"context"
 	"errors"
 
-	"github.com/flarexio/mdm-server/checkin"
-	"github.com/flarexio/mdm-server/command"
-	"github.com/flarexio/mdm-server/enrollment"
-	"github.com/flarexio/mdm-server/push"
+	"github.com/flarexio/mdm/checkin"
+	"github.com/flarexio/mdm/command"
+	"github.com/flarexio/mdm/enrollment"
+	"github.com/flarexio/mdm/push"
 )
 
 var ErrUnsupportedCheckin = errors.New("unsupported check-in message")

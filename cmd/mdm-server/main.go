@@ -17,11 +17,11 @@ import (
 	"github.com/urfave/cli/v3"
 	"go.uber.org/zap"
 
-	mdm "github.com/flarexio/mdm-server"
-	"github.com/flarexio/mdm-server/persistence/inmem"
-	"github.com/flarexio/mdm-server/push"
+	"github.com/flarexio/mdm"
+	"github.com/flarexio/mdm/persistence/inmem"
+	"github.com/flarexio/mdm/push"
 
-	transhttp "github.com/flarexio/mdm-server/transport/http"
+	transhttp "github.com/flarexio/mdm/transport/http"
 )
 
 var (
