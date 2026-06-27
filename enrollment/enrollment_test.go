@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/flarexio/mdm-server/enrollment"
+	"github.com/flarexio/mdm/enrollment"
 )
 
 func TestEnrollmentLifecycle(t *testing.T) {

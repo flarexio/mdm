@@ -4,8 +4,8 @@ import (
 	"io"
 	"net/http"
 
-	mdm "github.com/flarexio/mdm-server"
-	"github.com/flarexio/mdm-server/checkin"
+	"github.com/flarexio/mdm"
+	"github.com/flarexio/mdm/checkin"
 )
 
 // CheckInHandler serves the MDM CheckInURL. It expects RequireIdentity to have run

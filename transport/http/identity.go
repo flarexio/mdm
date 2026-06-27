@@ -5,7 +5,7 @@ import (
 	"crypto/x509"
 	"net/http"
 
-	"github.com/flarexio/mdm-server/enrollment"
+	"github.com/flarexio/mdm/enrollment"
 )
 
 type contextKey int

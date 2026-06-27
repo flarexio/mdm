@@ -1,0 +1,19 @@
+# Certificate paths are relative to --path (the working directory).
+
+push:
+  cert: certs/push.pem
+  key: certs/push-key.pem
+
+identity:
+  url: https://10.8.0.1:8443         # identity's mTLS API
+  ca: certs/identity-ca.crt          # verifies identity's server cert
+  cert: certs/identity-client.crt    # client cert presented to identity
+  key: certs/identity-client.key
+
+enroll:
+  identifier: io.flarex.mdm.enroll
+  organization: FlareX
+  externalURL: https://mdm.flarex.io    # reachable base (-> /server, /checkin)
+  scep:
+    url: https://ca.flarex.io/scep/mdm       # Step-CA SCEP endpoint
+    caName: mdm-scep                         # SCEP CA-IDENT (provisioner name)

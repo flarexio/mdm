@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/flarexio/mdm-server/command"
+	"github.com/flarexio/mdm/command"
 )
 
 // A real-shaped DeviceInformation command, server -> device.

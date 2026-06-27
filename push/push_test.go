@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/flarexio/mdm-server/push"
+	"github.com/flarexio/mdm/push"
 )
 
 // fakeTransport captures the outgoing request and returns a canned response,

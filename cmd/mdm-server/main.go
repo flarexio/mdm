@@ -17,11 +17,13 @@ import (
 	"github.com/urfave/cli/v3"
 	"go.uber.org/zap"
 
-	mdm "github.com/flarexio/mdm-server"
-	"github.com/flarexio/mdm-server/persistence/inmem"
-	"github.com/flarexio/mdm-server/push"
+	"github.com/flarexio/mdm"
+	"github.com/flarexio/mdm/conf"
+	"github.com/flarexio/mdm/identity"
+	"github.com/flarexio/mdm/persistence/inmem"
+	"github.com/flarexio/mdm/push"
 
-	transhttp "github.com/flarexio/mdm-server/transport/http"
+	transhttp "github.com/flarexio/mdm/transport/http"
 )
 
 var (
@@ -72,7 +74,7 @@ func main() {
 			},
 			&cli.IntFlag{
 				Name:    "port",
-				Usage:   "HTTP port for the admin/integration server (webhook, health)",
+				Usage:   "HTTP port for the admin/integration server (health, enrollment)",
 				Value:   8080,
 				Sources: cli.EnvVars("MDM_HTTP_PORT"),
 			},
@@ -87,16 +89,6 @@ func main() {
 				Usage:   "Port for the device-facing mTLS server",
 				Value:   8443,
 				Sources: cli.EnvVars("MDM_MTLS_PORT"),
-			},
-			&cli.StringFlag{
-				Name:    "push-cert",
-				Usage:   "Path to the MDM push certificate (PEM); enables real APNs",
-				Sources: cli.EnvVars("MDM_PUSH_CERT"),
-			},
-			&cli.StringFlag{
-				Name:    "push-key",
-				Usage:   "Path to the MDM push certificate key (PEM)",
-				Sources: cli.EnvVars("MDM_PUSH_KEY"),
 			},
 		},
 		Action: run,
@@ -118,6 +110,16 @@ func run(ctx context.Context, cmd *cli.Command) error {
 	defer logger.Sync()
 	zap.ReplaceGlobals(logger)
 
+	path := cmd.String("path")
+	cfg, err := conf.LoadConfig(path)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		logger.Warn("no config file; push and enrollment are disabled")
+		cfg = &conf.Config{Path: path}
+	}
+
 	// Infrastructure. In-memory today; a durable/shared backend slots in behind the
 	// same interfaces (see the persistence package).
 	enrollments, err := inmem.NewEnrollmentRepository()
@@ -131,7 +133,7 @@ func run(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	pusher, err := buildPusher(cmd, logger)
+	pusher, topic, err := buildPusher(cfg, logger)
 	if err != nil {
 		return err
 	}
@@ -139,11 +141,20 @@ func run(ctx context.Context, cmd *cli.Command) error {
 	// The core service: the composition of all the layers.
 	svc := mdm.NewService(enrollments, commands, pusher)
 
-	// Admin / integration server (no mTLS): health.
+	enroller, err := buildEnroller(cfg, topic, logger)
+	if err != nil {
+		return err
+	}
+
+	// Admin / integration server (no mTLS): health, and enrollment when configured.
 	admin := http.NewServeMux()
 	admin.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
+	if enroller != nil {
+		admin.Handle("POST /enroll/{subject}", transhttp.EnrollHandler(enroller))
+		logger.Info("enrollment endpoint enabled at POST /enroll/{subject}")
+	}
 
 	adminSrv := &http.Server{Addr: fmt.Sprintf(":%d", cmd.Int("port")), Handler: admin}
 	go serve(logger, "admin", func() error { return adminSrv.ListenAndServe() })
@@ -183,25 +194,69 @@ func run(ctx context.Context, cmd *cli.Command) error {
 
 // buildPusher returns a certificate-based APNs client when a push certificate is
 // configured, otherwise a logging no-op so the server still runs for development.
-func buildPusher(cmd *cli.Command, logger *zap.Logger) (push.Pusher, error) {
-	certPath, keyPath := cmd.String("push-cert"), cmd.String("push-key")
-	if certPath == "" || keyPath == "" {
+func buildPusher(cfg *conf.Config, logger *zap.Logger) (push.Pusher, string, error) {
+	if cfg.Push.Cert == "" || cfg.Push.Key == "" {
 		logger.Warn("no MDM push certificate configured; using a logging no-op pusher")
-		return logPusher{logger}, nil
+		return logPusher{logger}, "", nil
 	}
 
-	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+	cert, err := tls.LoadX509KeyPair(resolve(cfg.Path, cfg.Push.Cert), resolve(cfg.Path, cfg.Push.Key))
 	if err != nil {
-		return nil, fmt.Errorf("loading push certificate: %w", err)
+		return nil, "", fmt.Errorf("loading push certificate: %w", err)
 	}
 
 	topic, err := push.TopicFromCertificate(cert)
 	if err != nil {
-		return nil, fmt.Errorf("reading push topic: %w", err)
+		return nil, "", fmt.Errorf("reading push topic: %w", err)
 	}
 
 	logger.Info("APNs push enabled", zap.String("topic", topic))
-	return push.NewCertClient(push.HostProduction, cert), nil
+	return push.NewCertClient(push.HostProduction, cert), topic, nil
+}
+
+// buildEnroller returns nil when identity.url is unset, leaving the enrollment
+// endpoint unmounted.
+func buildEnroller(cfg *conf.Config, topic string, logger *zap.Logger) (mdm.Enroller, error) {
+	if cfg.Identity.URL == "" {
+		logger.Warn("no identity url configured; enrollment endpoint is disabled")
+		return nil, nil
+	}
+
+	cert, err := tls.LoadX509KeyPair(resolve(cfg.Path, cfg.Identity.Cert), resolve(cfg.Path, cfg.Identity.Key))
+	if err != nil {
+		return nil, fmt.Errorf("loading identity client certificate: %w", err)
+	}
+
+	caPEM, err := os.ReadFile(resolve(cfg.Path, cfg.Identity.CA))
+	if err != nil {
+		return nil, fmt.Errorf("reading identity CA: %w", err)
+	}
+
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(caPEM) {
+		return nil, errors.New("no certificates found in identity CA file")
+	}
+
+	enrollCfg := mdm.EnrollConfig{
+		Identifier:   cfg.Enroll.Identifier,
+		Organization: cfg.Enroll.Organization,
+		SCEPURL:      cfg.Enroll.SCEP.URL,
+		CAName:       cfg.Enroll.SCEP.CAName,
+		ServerURL:    cfg.Enroll.ExternalURL + "/server",
+		CheckInURL:   cfg.Enroll.ExternalURL + "/checkin",
+		Topic:        topic,
+	}
+
+	challenger := identity.NewClient(cfg.Identity.URL, cert, roots)
+	return mdm.NewEnroller(challenger, enrollCfg), nil
+}
+
+// resolve joins a config-relative path against the working directory.
+func resolve(base, p string) string {
+	if p == "" || filepath.IsAbs(p) {
+		return p
+	}
+	return filepath.Join(base, p)
 }
 
 // buildDeviceServer assembles the mTLS server that verifies device certificates

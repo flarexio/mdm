@@ -6,8 +6,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/flarexio/mdm-server/enrollment"
-	"github.com/flarexio/mdm-server/persistence/inmem"
+	"github.com/flarexio/mdm/enrollment"
+	"github.com/flarexio/mdm/persistence/inmem"
 )
 
 func TestEnrollmentRepository(t *testing.T) {

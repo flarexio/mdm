@@ -12,10 +12,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	mdm "github.com/flarexio/mdm-server"
-	"github.com/flarexio/mdm-server/enrollment"
-	"github.com/flarexio/mdm-server/persistence/inmem"
-	transhttp "github.com/flarexio/mdm-server/transport/http"
+	"github.com/flarexio/mdm"
+	"github.com/flarexio/mdm/enrollment"
+	"github.com/flarexio/mdm/persistence/inmem"
+	transhttp "github.com/flarexio/mdm/transport/http"
 )
 
 const authenticatePlist = `<?xml version="1.0" encoding="UTF-8"?>
