@@ -94,17 +94,6 @@ persistence/inmem/ 記憶體實作（enrollment repo、command queue）
 設定走 `<path>/config.yaml`（找不到會 fallback `config.example.yaml`）。`push` / `identity`
 / `enroll` 都在 config 裡，憑證路徑相對 `<path>`；CLI 只剩少數 operational flag。
 
-### 最小 demo（無 config，只起整合 server）
-
-```bash
-go run ./cmd/mdm-server
-curl localhost:8080/healthz          # → 200
-```
-
-找不到 config 時，push 與 enrollment 自動停用，server 仍可跑健康檢查。
-
-### 完整（裝置端 mTLS + APNs + 簽發 profile）
-
 1. `<path>/config.yaml`：照 `config.example.yaml` 填 `push` / `identity` / `enroll`。
 2. `<path>/certs/`：放 `server.crt`、`server.key`、`ca.crt`（驗裝置憑證的 CA，通常是
    Step-CA root），以及 config 指到的 push、identity client 憑證。
