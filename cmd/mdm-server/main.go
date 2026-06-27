@@ -89,11 +89,6 @@ func main() {
 				Sources: cli.EnvVars("MDM_MTLS_PORT"),
 			},
 			&cli.StringFlag{
-				Name:    "scep-webhook-secret",
-				Usage:   "Shared HMAC secret for StepCA's SCEP challenge webhook (enables it)",
-				Sources: cli.EnvVars("MDM_SCEP_WEBHOOK_SECRET"),
-			},
-			&cli.StringFlag{
 				Name:    "push-cert",
 				Usage:   "Path to the MDM push certificate (PEM); enables real APNs",
 				Sources: cli.EnvVars("MDM_PUSH_CERT"),
@@ -136,11 +131,6 @@ func run(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	challenges, err := inmem.NewChallengeStore(5 * time.Minute)
-	if err != nil {
-		return err
-	}
-
 	pusher, err := buildPusher(cmd, logger)
 	if err != nil {
 		return err
@@ -149,17 +139,11 @@ func run(ctx context.Context, cmd *cli.Command) error {
 	// The core service: the composition of all the layers.
 	svc := mdm.NewService(enrollments, commands, pusher)
 
-	// Admin / integration server (no mTLS): health + the StepCA challenge webhook.
+	// Admin / integration server (no mTLS): health.
 	admin := http.NewServeMux()
 	admin.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	if secret := cmd.String("scep-webhook-secret"); secret != "" {
-		admin.Handle("POST /scep/challenge/verify", transhttp.SCEPChallengeHandler(challenges, []byte(secret)))
-		logger.Info("SCEP challenge webhook enabled at POST /scep/challenge/verify")
-	} else {
-		logger.Warn("no scep-webhook-secret set; SCEP challenge webhook is disabled")
-	}
 
 	adminSrv := &http.Server{Addr: fmt.Sprintf(":%d", cmd.Int("port")), Handler: admin}
 	go serve(logger, "admin", func() error { return adminSrv.ListenAndServe() })
