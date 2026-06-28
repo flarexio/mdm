@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"log"
@@ -179,7 +181,7 @@ func run(ctx context.Context, cmd *cli.Command) error {
 	// Device-facing MDM server (mTLS): the check-in and command channels.
 	var deviceSrv *http.Server
 	if cmd.Bool("mtls-enabled") {
-		deviceSrv, err = buildDeviceServer(path, cmd.Int("mtls-port"), svc)
+		deviceSrv, err = buildDeviceServer(resolve(cfg.Path, cfg.CA), cmd.Int("mtls-port"), svc)
 		if err != nil {
 			return err
 		}
@@ -232,11 +234,19 @@ func buildPusher(cfg *conf.Config, logger *zap.Logger) (push.Pusher, string, err
 }
 
 // buildEnroller builds the enroller that mints enrollment profiles, fetching SCEP
-// challenges from identity over mTLS.
+// challenges from identity over mTLS. It also embeds the FlareX root (the
+// self-signed cert in cfg.CA) as a trust anchor in the profile so the device
+// trusts the private MDM/SCEP TLS certs; the anchor is skipped (with a warning) if
+// no root is found.
 func buildEnroller(cfg *conf.Config, topic string) (mdm.Enroller, error) {
 	cert, roots, err := identityMTLS(cfg)
 	if err != nil {
 		return nil, err
+	}
+
+	rootCA, err := rootCertDER(resolve(cfg.Path, cfg.CA))
+	if err != nil {
+		zap.L().Warn("no root trust anchor; enrollment profile will omit it", zap.Error(err))
 	}
 
 	enrollCfg := mdm.EnrollConfig{
@@ -247,10 +257,41 @@ func buildEnroller(cfg *conf.Config, topic string) (mdm.Enroller, error) {
 		ServerURL:    cfg.Enroll.ExternalURL + "/server",
 		CheckInURL:   cfg.Enroll.ExternalURL + "/checkin",
 		Topic:        topic,
+		RootCA:       rootCA,
 	}
 
 	challenger := identity.NewClient(cfg.Identity.URL, cert, roots)
 	return mdm.NewEnroller(challenger, enrollCfg), nil
+}
+
+// rootCertDER returns the DER of the self-signed (root) certificate from a PEM
+// file that may hold a chain — that is the trust anchor, regardless of order.
+func rootCertDER(path string) ([]byte, error) {
+	pemBytes, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	for {
+		var block *pem.Block
+		block, pemBytes = pem.Decode(pemBytes)
+		if block == nil {
+			break
+		}
+		if block.Type != "CERTIFICATE" {
+			continue
+		}
+
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			continue
+		}
+		if bytes.Equal(cert.RawSubject, cert.RawIssuer) {
+			return block.Bytes, nil // self-signed = root
+		}
+	}
+
+	return nil, fmt.Errorf("no self-signed root certificate in %s", path)
 }
 
 // buildVerifier builds the JWKS-backed bearer-token verifier. The JWKS is public
@@ -282,9 +323,9 @@ func identityMTLS(cfg *conf.Config) (tls.Certificate, *x509.CertPool, error) {
 		return tls.Certificate{}, nil, fmt.Errorf("loading identity client certificate: %w", err)
 	}
 
-	caPEM, err := os.ReadFile(resolve(cfg.Path, cfg.Identity.CA))
+	caPEM, err := os.ReadFile(resolve(cfg.Path, cfg.CA))
 	if err != nil {
-		return tls.Certificate{}, nil, fmt.Errorf("reading identity CA: %w", err)
+		return tls.Certificate{}, nil, fmt.Errorf("reading CA: %w", err)
 	}
 
 	roots := x509.NewCertPool()
@@ -304,9 +345,9 @@ func resolve(base, p string) string {
 }
 
 // buildDeviceServer assembles the mTLS server that verifies device certificates
-// against the CA in <path>/certs/ca.crt and serves the two MDM channels.
-func buildDeviceServer(path string, port int, svc mdm.Service) (*http.Server, error) {
-	caPEM, err := os.ReadFile(filepath.Join(path, "certs", "ca.crt"))
+// against the CA in caFile and serves the two MDM channels.
+func buildDeviceServer(caFile string, port int, svc mdm.Service) (*http.Server, error) {
+	caPEM, err := os.ReadFile(caFile)
 	if err != nil {
 		return nil, fmt.Errorf("reading device CA: %w", err)
 	}

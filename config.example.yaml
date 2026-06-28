@@ -1,19 +1,22 @@
 # Certificate paths are relative to --path (the working directory).
 
+# FlareX root (may be a chain): verifies identity's server cert + device client
+# certs, and its self-signed root is embedded as the enrollment trust anchor.
+ca: certs/ca.crt
+
 push:
   cert: certs/push.pem
   key: certs/push-key.pem
 
 identity:
   url: https://10.8.0.1:8443         # identity's mTLS API
-  ca: certs/ca.crt                   # verifies identity's server cert
   cert: certs/identity/client.crt    # client cert presented to identity
   key: certs/identity/client.key
 
 enroll:
   identifier: io.flarex.mdm.enroll
   organization: FlareX
-  externalURL: https://mdm.flarex.io    # reachable base (-> /server, /checkin)
+  externalURL: https://device.mdm.flarex.io   # device-facing mTLS host (-> /server, /checkin); must reach mdm:8443 directly (TCP passthrough), NOT the TLS-terminating admin host
   scep:
     url: https://ca.flarex.io/scep/mdm       # Step-CA SCEP endpoint
     caName: mdm-scep                         # SCEP CA-IDENT (provisioner name)

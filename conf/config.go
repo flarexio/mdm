@@ -9,6 +9,7 @@ import (
 
 type Config struct {
 	Path     string   `yaml:"-"`
+	CA       string   `yaml:"ca"` // FlareX root: verifies identity's server cert + device client certs, and is the enrollment trust anchor
 	Push     Push     `yaml:"push"`
 	Identity Identity `yaml:"identity"`
 	Enroll   Enroll   `yaml:"enroll"`
@@ -30,7 +31,6 @@ type Push struct {
 
 type Identity struct {
 	URL  string `yaml:"url"`
-	CA   string `yaml:"ca"`
 	Cert string `yaml:"cert"`
 	Key  string `yaml:"key"`
 }

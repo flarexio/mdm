@@ -80,7 +80,7 @@ service.go         根 package mdm：Service（check-in + command 兩通道）
 enroll.go          Enroller：取 identity challenge → 組 enrollment .mobileconfig
 command/           MDM 命令/結果協定型別 + Queue 介面（NotNow 語意）
 checkin/           check-in 訊息 + 兩段式 discriminated-union 解碼
-profile/           Configuration Profile（.mobileconfig）產生（SCEP + MDM payload）
+profile/           Configuration Profile（.mobileconfig）產生（SCEP + MDM + 信任錨 Certificate payload）
 enrollment/        enrollment aggregate（狀態機）+ Repository 介面 + domain events
 push/              APNs MDM 推播 client（憑證式）
 identity/          對 flarexio/identity 的 client：取 SCEP challenge（走 mTLS）
@@ -149,6 +149,30 @@ curl -H "Authorization: Bearer <admin-jwt>" http://<host>:8080/enrollments
 
 config 設定項見 `config.example.yaml`：`push`（APNs 憑證）、`identity`（challenge 來源，mTLS）、
 `enroll`（SCEP/MDM payload 靜態值）、`auth`（admin endpoint 的 JWKS 驗證）。
+
+### 裝置通道 TLS（反向代理）
+
+裝置通道（`/checkin`、`/server`）走 **mTLS**，**不能**穿過會終結 TLS 的反代。用 Traefik 時做
+**TCP passthrough**（按 SNI 把原始 TLS 直送 mdm，mdm 自己終結 mTLS）：
+
+```yaml
+tcp:
+  routers:
+    mdm-device:
+      entryPoints: [websecure]
+      rule: "HostSNI(`device.mdm.flarex.io`)"   # 裝置用的 host；admin 仍走 mdm.flarex.io 一般 TLS
+      tls:
+        passthrough: true
+      service: mdm-device
+  services:
+    mdm-device:
+      loadBalancer:
+        servers: [{ address: "mdm:8443" }]
+```
+
+裝置端點的 **server 憑證不必公開信任**：enroll 出的 `.mobileconfig` 會把 `certs/ca.crt`
+（FlareX root）當成 **Certificate payload** 夾進去，裝置就信任 FlareX 簽的 MDM/SCEP server
+憑證。對應 `enroll.externalURL` 指到裝置 host（如 `https://device.mdm.flarex.io`）。
 
 ### 測試
 
