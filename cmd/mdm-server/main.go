@@ -25,6 +25,7 @@ import (
 	"github.com/flarexio/mdm/auth"
 	"github.com/flarexio/mdm/conf"
 	"github.com/flarexio/mdm/identity"
+	badgerdb "github.com/flarexio/mdm/persistence/badger"
 	"github.com/flarexio/mdm/persistence/inmem"
 	"github.com/flarexio/mdm/push"
 
@@ -129,9 +130,9 @@ func run(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	// Infrastructure. In-memory today; a durable/shared backend slots in behind the
-	// same interfaces (see the persistence package).
-	enrollments, err := inmem.NewEnrollmentRepository()
+	// Infrastructure. Enrollments are durable (BadgerDB) so they survive a restart;
+	// the command queue is still in-memory (a lost command is simply re-enqueued).
+	enrollments, err := badgerdb.NewEnrollmentRepository(filepath.Join(path, "db"))
 	if err != nil {
 		return err
 	}

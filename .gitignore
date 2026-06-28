@@ -10,3 +10,4 @@ config.yaml
 *.p8
 *.p12
 *.mobileconfig
+/db/
