@@ -105,7 +105,8 @@ go run ./cmd/mdm-server --mtls-enabled --path ./run
 # 簽發： POST http://<host>:8080/enroll          → .mobileconfig（subject 取自 token）
 # 裝置： PUT  https://<host>:8443/checkin、/server
 #
-# 下令 /enqueue、查詢 /enrollments 目前在 main 註解掉（等 identity 能發 admin role）。
+# 下令： POST http://<host>:8080/enqueue/{subject}      → push 喚醒裝置（admin role）
+# 查詢： GET  http://<host>:8080/enrollments[/{subject}] → 裝置與狀態（admin role）
 ```
 
 admin endpoint 做兩段把關:
@@ -117,8 +118,8 @@ admin endpoint 做兩段把關:
 角色分工:
 - `POST /enroll`(`mdm::enroll.issue`)→ **`user` role**(自助註冊;subject 取自 token
   的 `sub`,使用者只能註冊自己)。identity 現在發的 `roles:["user"]` token 即可。
-- `/enqueue`、`/enrollments`(`mdm::commands.*` / `mdm::enrollments.*`)→ **`admin` role**。
-  identity 尚未能發 admin role,故這些在 main 暫時註解掉。
+- `/enqueue`、`/enrollments`(`mdm::commands.*` / `mdm::enrollments.*`)→ **`admin` role**
+  (identity 把 `jwt.admins` 名單內的使用者授予 `admin` role)。
 
 設定 `auth` 區塊即啟用兩段(`/enroll` 需要 auth 才會掛上,因為 subject 來自 token)。
 
@@ -127,8 +128,7 @@ admin endpoint 做兩段把關:
 curl -X POST http://<host>:8080/enroll -H "Authorization: Bearer <identity-jwt>"
 ```
 
-下面的 operator API 需要 `admin` role(identity 尚未能發),目前在 main 註解掉;
-之後啟用後 body 是 `requestType` + 選填的 `command`(型別專屬欄位):
+operator API 需要 `admin` role。下令 body 是 `requestType` + 選填的 `command`(型別專屬欄位):
 
 ```bash
 # 鎖屏（最直觀的 demo：發出去 iPhone 就鎖）

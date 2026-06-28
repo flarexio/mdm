@@ -156,14 +156,14 @@ func run(ctx context.Context, cmd *cli.Command) error {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	// Self-service enrollment: the subject is taken from the caller's token
-	// (claims.sub), not the URL, so a user can only enroll themselves.
+	// Self-service enrollment (user role): the subject is taken from the caller's
+	// token (claims.sub), not the URL, so a user can only enroll themselves.
 	admin.Handle("POST /enroll", authz("mdm::enroll.issue")(transhttp.EnrollHandler(enroller)))
 
-	// Operator endpoints are DISABLED until identity can issue an "admin" role:
-	// admin.Handle("POST /enqueue/{subject}", authz("mdm::commands.enqueue")(transhttp.EnqueueHandler(svc)))
-	// admin.Handle("GET /enrollments", authz("mdm::enrollments.list")(transhttp.EnrollmentsHandler(svc)))
-	// admin.Handle("GET /enrollments/{subject}", authz("mdm::enrollments.read")(transhttp.EnrollmentHandler(svc)))
+	// Operator endpoints (admin role).
+	admin.Handle("POST /enqueue/{subject}", authz("mdm::commands.enqueue")(transhttp.EnqueueHandler(svc)))
+	admin.Handle("GET /enrollments", authz("mdm::enrollments.list")(transhttp.EnrollmentsHandler(svc)))
+	admin.Handle("GET /enrollments/{subject}", authz("mdm::enrollments.read")(transhttp.EnrollmentHandler(svc)))
 
 	adminSrv := &http.Server{Addr: fmt.Sprintf(":%d", cmd.Int("port")), Handler: admin}
 	go serve(logger, "admin", func() error { return adminSrv.ListenAndServe() })
