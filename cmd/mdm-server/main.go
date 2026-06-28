@@ -17,6 +17,8 @@ import (
 	"github.com/urfave/cli/v3"
 	"go.uber.org/zap"
 
+	"github.com/flarexio/core/policy"
+
 	"github.com/flarexio/mdm"
 	"github.com/flarexio/mdm/auth"
 	"github.com/flarexio/mdm/conf"
@@ -114,11 +116,7 @@ func run(ctx context.Context, cmd *cli.Command) error {
 	path := cmd.String("path")
 	cfg, err := conf.LoadConfig(path)
 	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		logger.Warn("no config file; push and enrollment are disabled")
-		cfg = &conf.Config{Path: path}
+		return err
 	}
 
 	// Infrastructure. In-memory today; a durable/shared backend slots in behind the
@@ -142,36 +140,30 @@ func run(ctx context.Context, cmd *cli.Command) error {
 	// The core service: the composition of all the layers.
 	svc := mdm.NewService(enrollments, commands, pusher)
 
-	enroller, err := buildEnroller(cfg, topic, logger)
+	enroller, err := buildEnroller(cfg, topic)
 	if err != nil {
 		return err
 	}
 
-	verifier, err := buildVerifier(cfg, logger)
+	authz, err := buildAuthz(ctx, cfg, buildVerifier(cfg, logger), logger)
 	if err != nil {
 		return err
 	}
 
-	// protect wraps the admin handlers with bearer-token auth when a verifier is
-	// configured, and is a pass-through otherwise (development).
-	protect := func(h http.Handler) http.Handler { return h }
-	if verifier != nil {
-		protect = transhttp.RequireToken(verifier)
-		logger.Info("admin endpoints require an identity bearer token")
-	}
-
-	// Admin / integration server (no mTLS): health, and enrollment when configured.
+	// Admin / integration server (no mTLS).
 	admin := http.NewServeMux()
 	admin.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	if enroller != nil {
-		admin.Handle("POST /enroll/{subject}", protect(transhttp.EnrollHandler(enroller)))
-		logger.Info("enrollment endpoint enabled at POST /enroll/{subject}")
-	}
-	admin.Handle("POST /enqueue/{subject}", protect(transhttp.EnqueueHandler(svc)))
-	admin.Handle("GET /enrollments", protect(transhttp.EnrollmentsHandler(svc)))
-	admin.Handle("GET /enrollments/{subject}", protect(transhttp.EnrollmentHandler(svc)))
+
+	// Self-service enrollment: the subject is taken from the caller's token
+	// (claims.sub), not the URL, so a user can only enroll themselves.
+	admin.Handle("POST /enroll", authz("mdm::enroll.issue")(transhttp.EnrollHandler(enroller)))
+
+	// Operator endpoints are DISABLED until identity can issue an "admin" role:
+	// admin.Handle("POST /enqueue/{subject}", authz("mdm::commands.enqueue")(transhttp.EnqueueHandler(svc)))
+	// admin.Handle("GET /enrollments", authz("mdm::enrollments.list")(transhttp.EnrollmentsHandler(svc)))
+	// admin.Handle("GET /enrollments/{subject}", authz("mdm::enrollments.read")(transhttp.EnrollmentHandler(svc)))
 
 	adminSrv := &http.Server{Addr: fmt.Sprintf(":%d", cmd.Int("port")), Handler: admin}
 	go serve(logger, "admin", func() error { return adminSrv.ListenAndServe() })
@@ -209,12 +201,13 @@ func run(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
-// buildPusher returns a certificate-based APNs client when a push certificate is
-// configured, otherwise a logging no-op so the server still runs for development.
+// buildPusher builds the certificate-based APNs client from the push certificate.
+// Push is optional for now (the command channel that uses it is disabled): with no
+// certificate it returns a no-op pusher and an empty topic.
 func buildPusher(cfg *conf.Config, logger *zap.Logger) (push.Pusher, string, error) {
-	if cfg.Push.Cert == "" || cfg.Push.Key == "" {
-		logger.Warn("no MDM push certificate configured; using a logging no-op pusher")
-		return logPusher{logger}, "", nil
+	if cfg.Push.Cert == "" {
+		logger.Warn("no push certificate configured; APNs push is disabled")
+		return noopPusher{}, "", nil
 	}
 
 	cert, err := tls.LoadX509KeyPair(resolve(cfg.Path, cfg.Push.Cert), resolve(cfg.Path, cfg.Push.Key))
@@ -231,14 +224,9 @@ func buildPusher(cfg *conf.Config, logger *zap.Logger) (push.Pusher, string, err
 	return push.NewCertClient(push.HostProduction, cert), topic, nil
 }
 
-// buildEnroller returns nil when identity.url is unset, leaving the enrollment
-// endpoint unmounted.
-func buildEnroller(cfg *conf.Config, topic string, logger *zap.Logger) (mdm.Enroller, error) {
-	if cfg.Identity.URL == "" {
-		logger.Warn("no identity url configured; enrollment endpoint is disabled")
-		return nil, nil
-	}
-
+// buildEnroller builds the enroller that mints enrollment profiles, fetching SCEP
+// challenges from identity over mTLS.
+func buildEnroller(cfg *conf.Config, topic string) (mdm.Enroller, error) {
 	cert, roots, err := identityMTLS(cfg)
 	if err != nil {
 		return nil, err
@@ -258,21 +246,25 @@ func buildEnroller(cfg *conf.Config, topic string, logger *zap.Logger) (mdm.Enro
 	return mdm.NewEnroller(challenger, enrollCfg), nil
 }
 
-// buildVerifier returns a JWKS-backed bearer-token verifier when auth.jwksURL is
-// set, otherwise nil so the admin endpoints stay open for development. The JWKS is
-// fetched over the same identity mTLS trust the enroller uses.
-func buildVerifier(cfg *conf.Config, logger *zap.Logger) (auth.Verifier, error) {
-	if cfg.Auth.JWKSURL == "" {
-		logger.Warn("no auth.jwksURL configured; admin endpoints (/enroll, /enqueue) are unauthenticated")
-		return nil, nil
+// buildVerifier builds the JWKS-backed bearer-token verifier. The JWKS is public
+// data served over identity's public (Let's Encrypt) endpoint, so it is fetched
+// over normal system-trust TLS — no client certificate needed.
+func buildVerifier(cfg *conf.Config, logger *zap.Logger) auth.Verifier {
+	client := &http.Client{Timeout: 10 * time.Second}
+	logger.Info("admin token verification enabled", zap.String("jwks", cfg.Auth.JWKSURL))
+	return auth.NewJWKSVerifier(cfg.Auth.JWKSURL, cfg.Auth.Issuer, cfg.Auth.Audience, client)
+}
+
+// buildAuthz loads the OPA policy from <path>/permissions.json and returns an
+// authorizator bound to the verifier.
+func buildAuthz(ctx context.Context, cfg *conf.Config, verifier auth.Verifier, logger *zap.Logger) (transhttp.Authz, error) {
+	pol, err := policy.NewRegoPolicy(ctx, resolve(cfg.Path, "permissions.json"))
+	if err != nil {
+		return nil, fmt.Errorf("loading authorization policy: %w", err)
 	}
 
-	// JWKS is public data served over identity's public (Let's Encrypt) endpoint,
-	// so fetch it over normal system-trust TLS — no client certificate needed.
-	client := &http.Client{Timeout: 10 * time.Second}
-
-	logger.Info("admin token verification enabled", zap.String("jwks", cfg.Auth.JWKSURL))
-	return auth.NewJWKSVerifier(cfg.Auth.JWKSURL, cfg.Auth.Issuer, cfg.Auth.Audience, client), nil
+	logger.Info("admin endpoints require a bearer token and OPA authorization")
+	return transhttp.Authorizator(verifier, pol), nil
 }
 
 // identityMTLS loads the client certificate and trust roots used to reach
@@ -343,14 +335,8 @@ func serve(logger *zap.Logger, name string, listen func() error) {
 	}
 }
 
-// logPusher is a Pusher that logs instead of contacting APNs, used when no push
-// certificate is configured.
-type logPusher struct{ logger *zap.Logger }
+// noopPusher is used while push is deferred: the command channel that would call
+// it is disabled, so it never sends.
+type noopPusher struct{}
 
-func (p logPusher) Push(_ context.Context, t push.Target) error {
-	p.logger.Info("APNs push (no certificate configured; not sent)",
-		zap.String("topic", t.Topic),
-		zap.String("token", t.Token),
-	)
-	return nil
-}
+func (noopPusher) Push(context.Context, push.Target) error { return nil }

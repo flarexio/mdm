@@ -1,0 +1,34 @@
+{
+    "role_permissions": {
+        "user": [
+            {
+                "domain": "mdm::enroll",
+                "actions": [
+                    "issue"
+                ]
+            }
+        ],
+        "admin": [
+            {
+                "domain": "mdm::commands",
+                "actions": [
+                    "enqueue"
+                ]
+            },
+            {
+                "domain": "mdm::enrollments",
+                "actions": [
+                    "list",
+                    "read"
+                ]
+            }
+        ]
+    },
+    "who_enum": {
+        "owner": 1,
+        "group": 2,
+        "others": 4,
+        "admin": 8,
+        "all": 16
+    }
+}
