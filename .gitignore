@@ -1,7 +1,5 @@
 /.vscode/
 /release/
-/build/*
-!/build/Dockerfile.*
 /certs/
 
 # build artifacts — never build binaries into the repo root.
