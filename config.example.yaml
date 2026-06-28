@@ -18,7 +18,7 @@ enroll:
   organization: FlareX
   externalURL: https://device.mdm.flarex.io   # device-facing mTLS host (-> /server, /checkin); must reach mdm:8443 directly (TCP passthrough), NOT the TLS-terminating admin host
   scep:
-    url: https://ca.flarex.io/scep/mdm       # Step-CA SCEP endpoint
+    url: https://ca.flarex.io/scep/mdm-scep  # Step-CA SCEP endpoint = <ca>/scep/<provisioner>
     caName: mdm-scep                         # SCEP CA-IDENT (provisioner name)
 
 # Bearer-token auth for the admin endpoints (/enroll, /enqueue), verified against
