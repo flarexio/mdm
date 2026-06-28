@@ -2,10 +2,10 @@ FROM golang:1.26-alpine AS builder
 RUN apk add --no-cache git
 WORKDIR /src
 COPY . .
-RUN CGO_ENABLED=0 go build -o /mdm ./cmd/mdm-server
+RUN CGO_ENABLED=0 go build -o /mdm-server ./cmd/mdm-server
 
 FROM alpine:3.22
-COPY --from=builder /mdm /bin/mdm
+COPY --from=builder /mdm-server /bin/mdm-server
 COPY --from=builder /src/config.example.yaml /src/permissions.json /root/.flarex/mdm/
 EXPOSE 8080 8443
-ENTRYPOINT ["/bin/mdm"]
+ENTRYPOINT ["/bin/mdm-server"]
