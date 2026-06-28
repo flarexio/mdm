@@ -4,6 +4,7 @@ go 1.26.3
 
 require (
 	github.com/flarexio/core v1.0.6
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/micromdm/plist v0.2.2
 	github.com/stretchr/testify v1.11.1
