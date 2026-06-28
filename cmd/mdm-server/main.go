@@ -72,7 +72,7 @@ func main() {
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "path",
-				Usage:   "Working directory (mTLS certs are read from <path>/certs)",
+				Usage:   "Working directory for config and certs (default ~/.flarex/mdm)",
 				Sources: cli.EnvVars("MDM_PATH"),
 			},
 			&cli.IntFlag{
@@ -114,6 +114,14 @@ func run(ctx context.Context, cmd *cli.Command) error {
 	zap.ReplaceGlobals(logger)
 
 	path := cmd.String("path")
+	if path == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		path = filepath.Join(home, ".flarex", "mdm")
+	}
+
 	cfg, err := conf.LoadConfig(path)
 	if err != nil {
 		return err
@@ -171,14 +179,13 @@ func run(ctx context.Context, cmd *cli.Command) error {
 	// Device-facing MDM server (mTLS): the check-in and command channels.
 	var deviceSrv *http.Server
 	if cmd.Bool("mtls-enabled") {
-		deviceSrv, err = buildDeviceServer(cmd, svc)
+		deviceSrv, err = buildDeviceServer(path, cmd.Int("mtls-port"), svc)
 		if err != nil {
 			return err
 		}
 
-		base := cmd.String("path")
-		certFile := filepath.Join(base, "certs", "server.crt")
-		keyFile := filepath.Join(base, "certs", "server.key")
+		certFile := filepath.Join(path, "certs", "server.crt")
+		keyFile := filepath.Join(path, "certs", "server.key")
 		go serve(logger, "device(mTLS)", func() error { return deviceSrv.ListenAndServeTLS(certFile, keyFile) })
 	} else {
 		logger.Warn("mTLS disabled; device endpoints (/checkin, /server) are not served")
@@ -298,10 +305,8 @@ func resolve(base, p string) string {
 
 // buildDeviceServer assembles the mTLS server that verifies device certificates
 // against the CA in <path>/certs/ca.crt and serves the two MDM channels.
-func buildDeviceServer(cmd *cli.Command, svc mdm.Service) (*http.Server, error) {
-	base := cmd.String("path")
-
-	caPEM, err := os.ReadFile(filepath.Join(base, "certs", "ca.crt"))
+func buildDeviceServer(path string, port int, svc mdm.Service) (*http.Server, error) {
+	caPEM, err := os.ReadFile(filepath.Join(path, "certs", "ca.crt"))
 	if err != nil {
 		return nil, fmt.Errorf("reading device CA: %w", err)
 	}
@@ -318,7 +323,7 @@ func buildDeviceServer(cmd *cli.Command, svc mdm.Service) (*http.Server, error) 
 	mux.Handle("PUT /server", requireID(transhttp.CommandHandler(svc)))
 
 	return &http.Server{
-		Addr:    fmt.Sprintf(":%d", cmd.Int("mtls-port")),
+		Addr:    fmt.Sprintf(":%d", port),
 		Handler: mux,
 		TLSConfig: &tls.Config{
 			ClientCAs:  pool,

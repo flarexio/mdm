@@ -142,7 +142,7 @@ curl -H "Authorization: Bearer <admin-jwt>" http://<host>:8080/enrollments
 
 | Flag / Env | 說明 |
 |---|---|
-| `--path` / `MDM_PATH` | 工作目錄；config.yaml 與憑證讀自此 |
+| `--path` / `MDM_PATH` | 工作目錄；config.yaml 與憑證讀自此（預設 `~/.flarex/mdm`） |
 | `--port` / `MDM_HTTP_PORT` | 整合 server（health、enroll），預設 8080 |
 | `--mtls-enabled` / `MDM_MTLS_ENABLED` | 啟用裝置端 mTLS server |
 | `--mtls-port` / `MDM_MTLS_PORT` | 裝置端 mTLS port，預設 8443 |
