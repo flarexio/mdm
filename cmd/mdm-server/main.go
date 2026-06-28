@@ -18,6 +18,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/flarexio/mdm"
+	"github.com/flarexio/mdm/auth"
 	"github.com/flarexio/mdm/conf"
 	"github.com/flarexio/mdm/identity"
 	"github.com/flarexio/mdm/persistence/inmem"
@@ -146,16 +147,29 @@ func run(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
+	verifier, err := buildVerifier(cfg, logger)
+	if err != nil {
+		return err
+	}
+
+	// protect wraps the admin handlers with bearer-token auth when a verifier is
+	// configured, and is a pass-through otherwise (development).
+	protect := func(h http.Handler) http.Handler { return h }
+	if verifier != nil {
+		protect = transhttp.RequireToken(verifier)
+		logger.Info("admin endpoints require an identity bearer token")
+	}
+
 	// Admin / integration server (no mTLS): health, and enrollment when configured.
 	admin := http.NewServeMux()
 	admin.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 	if enroller != nil {
-		admin.Handle("POST /enroll/{subject}", transhttp.EnrollHandler(enroller))
+		admin.Handle("POST /enroll/{subject}", protect(transhttp.EnrollHandler(enroller)))
 		logger.Info("enrollment endpoint enabled at POST /enroll/{subject}")
 	}
-	admin.Handle("POST /enqueue/{subject}", transhttp.EnqueueHandler(svc))
+	admin.Handle("POST /enqueue/{subject}", protect(transhttp.EnqueueHandler(svc)))
 
 	adminSrv := &http.Server{Addr: fmt.Sprintf(":%d", cmd.Int("port")), Handler: admin}
 	go serve(logger, "admin", func() error { return adminSrv.ListenAndServe() })
@@ -223,19 +237,9 @@ func buildEnroller(cfg *conf.Config, topic string, logger *zap.Logger) (mdm.Enro
 		return nil, nil
 	}
 
-	cert, err := tls.LoadX509KeyPair(resolve(cfg.Path, cfg.Identity.Cert), resolve(cfg.Path, cfg.Identity.Key))
+	cert, roots, err := identityMTLS(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("loading identity client certificate: %w", err)
-	}
-
-	caPEM, err := os.ReadFile(resolve(cfg.Path, cfg.Identity.CA))
-	if err != nil {
-		return nil, fmt.Errorf("reading identity CA: %w", err)
-	}
-
-	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM(caPEM) {
-		return nil, errors.New("no certificates found in identity CA file")
+		return nil, err
 	}
 
 	enrollCfg := mdm.EnrollConfig{
@@ -250,6 +254,56 @@ func buildEnroller(cfg *conf.Config, topic string, logger *zap.Logger) (mdm.Enro
 
 	challenger := identity.NewClient(cfg.Identity.URL, cert, roots)
 	return mdm.NewEnroller(challenger, enrollCfg), nil
+}
+
+// buildVerifier returns a JWKS-backed bearer-token verifier when auth.jwksURL is
+// set, otherwise nil so the admin endpoints stay open for development. The JWKS is
+// fetched over the same identity mTLS trust the enroller uses.
+func buildVerifier(cfg *conf.Config, logger *zap.Logger) (auth.Verifier, error) {
+	if cfg.Auth.JWKSURL == "" {
+		logger.Warn("no auth.jwksURL configured; admin endpoints (/enroll, /enqueue) are unauthenticated")
+		return nil, nil
+	}
+
+	cert, roots, err := identityMTLS(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				Certificates: []tls.Certificate{cert},
+				RootCAs:      roots,
+				MinVersion:   tls.VersionTLS12,
+			},
+		},
+	}
+
+	logger.Info("admin token verification enabled", zap.String("jwks", cfg.Auth.JWKSURL))
+	return auth.NewJWKSVerifier(cfg.Auth.JWKSURL, cfg.Auth.Issuer, cfg.Auth.Audience, client), nil
+}
+
+// identityMTLS loads the client certificate and trust roots used to reach
+// identity's mTLS endpoints (challenge generation and JWKS).
+func identityMTLS(cfg *conf.Config) (tls.Certificate, *x509.CertPool, error) {
+	cert, err := tls.LoadX509KeyPair(resolve(cfg.Path, cfg.Identity.Cert), resolve(cfg.Path, cfg.Identity.Key))
+	if err != nil {
+		return tls.Certificate{}, nil, fmt.Errorf("loading identity client certificate: %w", err)
+	}
+
+	caPEM, err := os.ReadFile(resolve(cfg.Path, cfg.Identity.CA))
+	if err != nil {
+		return tls.Certificate{}, nil, fmt.Errorf("reading identity CA: %w", err)
+	}
+
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(caPEM) {
+		return tls.Certificate{}, nil, errors.New("no certificates found in identity CA file")
+	}
+
+	return cert, roots, nil
 }
 
 // resolve joins a config-relative path against the working directory.

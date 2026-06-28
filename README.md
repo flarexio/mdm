@@ -84,6 +84,7 @@ profile/           Configuration Profile（.mobileconfig）產生（SCEP + MDM p
 enrollment/        enrollment aggregate（狀態機）+ Repository 介面 + domain events
 push/              APNs MDM 推播 client（憑證式）
 identity/          對 flarexio/identity 的 client：取 SCEP challenge（走 mTLS）
+auth/              admin endpoint 的 bearer token 驗證（identity JWKS, EdDSA）
 conf/              config.yaml 載入
 transport/http/    mTLS 身分中介層、/checkin、/server、/enroll、/enqueue
 persistence/inmem/ 記憶體實作（enrollment repo、command queue）
@@ -94,7 +95,7 @@ persistence/inmem/ 記憶體實作（enrollment repo、command queue）
 設定走 `<path>/config.yaml`（找不到會 fallback `config.example.yaml`）。`push` / `identity`
 / `enroll` 都在 config 裡，憑證路徑相對 `<path>`；CLI 只剩少數 operational flag。
 
-1. `<path>/config.yaml`：照 `config.example.yaml` 填 `push` / `identity` / `enroll`。
+1. `<path>/config.yaml`：照 `config.example.yaml` 填 `push` / `identity` / `enroll` / `auth`。
 2. `<path>/certs/`：放 `server.crt`、`server.key`、`ca.crt`（驗裝置憑證的 CA，通常是
    Step-CA root），以及 config 指到的 push、identity client 憑證。
 
@@ -105,15 +106,21 @@ go run ./cmd/mdm-server --mtls-enabled --path ./run
 # 裝置： PUT  https://<host>:8443/checkin、/server
 ```
 
+admin endpoint(`/enroll`、`/enqueue`)用 identity 簽的 bearer token 認證(EdDSA,
+對 identity JWKS 驗;設定 `auth` 區塊即啟用,留空則不認證)。token 的 `aud` 要含
+`auth.audience`,所以 identity 的 `jwt.audiences` 要加上 `mdm.flarex.io`。
+
 下命令(admin)body 是 `requestType` + 選填的 `command`(型別專屬欄位):
 
 ```bash
 # 鎖屏（最直觀的 demo：發出去 iPhone 就鎖）
 curl -X POST http://<host>:8080/enqueue/<subject> \
+  -H "Authorization: Bearer <identity-jwt>" \
   -d '{"requestType":"DeviceLock"}'
 
 # 讀裝置資訊
 curl -X POST http://<host>:8080/enqueue/<subject> \
+  -H "Authorization: Bearer <identity-jwt>" \
   -d '{"requestType":"DeviceInformation","command":{"Queries":["DeviceName","OSVersion","SerialNumber"]}}'
 ```
 
@@ -125,7 +132,7 @@ curl -X POST http://<host>:8080/enqueue/<subject> \
 | `--mtls-port` / `MDM_MTLS_PORT` | 裝置端 mTLS port，預設 8443 |
 
 config 設定項見 `config.example.yaml`：`push`（APNs 憑證）、`identity`（challenge 來源，mTLS）、
-`enroll`（SCEP/MDM payload 靜態值）。
+`enroll`（SCEP/MDM payload 靜態值）、`auth`（admin endpoint 的 JWKS 驗證）。
 
 ### 測試
 

@@ -12,6 +12,15 @@ type Config struct {
 	Push     Push     `yaml:"push"`
 	Identity Identity `yaml:"identity"`
 	Enroll   Enroll   `yaml:"enroll"`
+	Auth     Auth     `yaml:"auth"`
+}
+
+// Auth configures bearer-token verification for the admin endpoints against
+// identity's JWKS. Leave jwksURL empty to leave those endpoints unauthenticated.
+type Auth struct {
+	JWKSURL  string `yaml:"jwksURL"`
+	Issuer   string `yaml:"issuer"`
+	Audience string `yaml:"audience"`
 }
 
 type Push struct {

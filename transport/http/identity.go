@@ -13,6 +13,7 @@ type contextKey int
 const (
 	identityContextKey contextKey = iota
 	certificateContextKey
+	claimsContextKey
 )
 
 // IdentityFunc resolves the authenticated enrollment identity of a request. It
