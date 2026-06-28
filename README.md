@@ -180,6 +180,9 @@ tcp:
 go test ./...
 ```
 
+端到端（免真機，用 scepclient + curl 模擬裝置跑完整 SCEP 發證 + check-in + 命令迴圈）
+見 [`docs/e2e-testing.md`](docs/e2e-testing.md)。
+
 ## 生產接法（重點）
 
 - **身分/PKI**：用 **Step-CA** 當獨立 CA + **SCEP provisioner**，以 **challenge webhook**
