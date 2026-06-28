@@ -114,8 +114,6 @@ func (mw *loggingMiddleware) Command(id enrollment.ID, result *command.Result) (
 		zap.String("command_uuid", result.CommandUUID),
 	)
 
-	log.Debug("result payload", zap.ByteString("raw", result.Raw))
-
 	next, err := mw.next.Command(id, result)
 	if err != nil {
 		log.Error(err.Error())
