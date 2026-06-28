@@ -17,6 +17,7 @@ type EnrollConfig struct {
 	ServerURL    string
 	CheckInURL   string
 	Topic        string // from the push certificate
+	RootCA       []byte // DER of the trust anchor; embedded so the device trusts the MDM/SCEP TLS certs (optional)
 }
 
 // Enroller fetches a one-time SCEP challenge from identity and assembles the
@@ -61,6 +62,13 @@ func (e *enroller) Profile(ctx context.Context, subject string) ([]byte, error) 
 	)
 
 	p := profile.New(e.cfg.Identifier, e.cfg.Organization+" Enrollment")
+
+	// Install the trust anchor first so the device trusts the MDM/SCEP TLS certs
+	// it then contacts, when those run on a private (non-public) CA.
+	if len(e.cfg.RootCA) > 0 {
+		ca := profile.NewCertificate(e.cfg.Identifier+".ca", "ca.crt", e.cfg.RootCA)
+		p.Add(ca)
+	}
 	p.Add(scep, mdmPayload)
 
 	return p.Marshal()
