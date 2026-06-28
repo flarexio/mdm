@@ -19,6 +19,14 @@ type Claims struct {
 	Roles []string `json:"roles"`
 }
 
+// Map is the projection handed to the OPA policy as input.claims.
+func (c *Claims) Map() map[string]any {
+	return map[string]any{
+		"sub":   c.Subject,
+		"roles": c.Roles,
+	}
+}
+
 // Verifier validates a bearer token and returns its claims.
 type Verifier interface {
 	Verify(ctx context.Context, bearer string) (*Claims, error)

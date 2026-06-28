@@ -37,6 +37,14 @@ type Service interface {
 	// result (or Idle poll) and returns the next command to run, or nil if the
 	// queue is empty.
 	Command(id enrollment.ID, result *command.Result) (*command.Command, error)
+
+	// Query.
+
+	// Enrollments returns every enrollment the server knows about.
+	Enrollments() ([]*enrollment.Enrollment, error)
+
+	// Enrollment returns a single enrollment by its ID.
+	Enrollment(id enrollment.ID) (*enrollment.Enrollment, error)
 }
 
 type ServiceMiddleware func(Service) Service
@@ -166,4 +174,12 @@ func (svc *service) Command(id enrollment.ID, result *command.Result) (*command.
 	}
 
 	return svc.commands.Next(string(id), result.Status == command.NotNow)
+}
+
+func (svc *service) Enrollments() ([]*enrollment.Enrollment, error) {
+	return svc.enrollments.ListAll()
+}
+
+func (svc *service) Enrollment(id enrollment.ID) (*enrollment.Enrollment, error) {
+	return svc.enrollments.Find(id)
 }
