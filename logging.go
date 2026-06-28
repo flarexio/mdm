@@ -112,6 +112,7 @@ func (mw *loggingMiddleware) Command(id enrollment.ID, result *command.Result) (
 		zap.String("enrollment_id", id.String()),
 		zap.String("status", string(result.Status)),
 		zap.String("command_uuid", result.CommandUUID),
+		zap.Int("bytes", len(result.Raw)),
 	)
 
 	next, err := mw.next.Command(id, result)
