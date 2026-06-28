@@ -86,7 +86,7 @@ push/              APNs MDM 推播 client（憑證式）
 identity/          對 flarexio/identity 的 client：取 SCEP challenge（走 mTLS）
 auth/              admin endpoint 的 bearer token 驗證（identity JWKS, EdDSA）
 conf/              config.yaml 載入
-transport/http/    mTLS 身分中介層、/checkin、/server、/enroll、/enqueue
+transport/http/    mTLS 身分中介層、/checkin、/server、/enroll、/enqueue、/enrollments
 persistence/inmem/ 記憶體實作（enrollment repo、command queue）
 ```
 
@@ -103,6 +103,7 @@ persistence/inmem/ 記憶體實作（enrollment repo、command queue）
 go run ./cmd/mdm-server --mtls-enabled --path ./run
 # 簽發： POST http://<host>:8080/enroll/{subject}   → .mobileconfig
 # 下令： POST http://<host>:8080/enqueue/{subject}  → push 喚醒裝置拉命令
+# 查詢： GET  http://<host>:8080/enrollments[/{subject}]  → 裝置與狀態
 # 裝置： PUT  https://<host>:8443/checkin、/server
 ```
 
@@ -122,6 +123,9 @@ curl -X POST http://<host>:8080/enqueue/<subject> \
 curl -X POST http://<host>:8080/enqueue/<subject> \
   -H "Authorization: Bearer <identity-jwt>" \
   -d '{"requestType":"DeviceInformation","command":{"Queries":["DeviceName","OSVersion","SerialNumber"]}}'
+
+# 查目前有哪些裝置、各在什麼狀態(pending/enrolled/removed、能不能 push)
+curl -H "Authorization: Bearer <identity-jwt>" http://<host>:8080/enrollments
 ```
 
 | Flag / Env | 說明 |

@@ -6,9 +6,9 @@ push:
 
 identity:
   url: https://10.8.0.1:8443         # identity's mTLS API
-  ca: certs/identity-ca.crt          # verifies identity's server cert
-  cert: certs/identity-client.crt    # client cert presented to identity
-  key: certs/identity-client.key
+  ca: certs/ca.crt                   # verifies identity's server cert
+  cert: certs/identity/client.crt    # client cert presented to identity
+  key: certs/identity/client.key
 
 enroll:
   identifier: io.flarex.mdm.enroll
@@ -21,6 +21,6 @@ enroll:
 # Bearer-token auth for the admin endpoints (/enroll, /enqueue), verified against
 # identity's JWKS. Omit this block to leave those endpoints unauthenticated.
 auth:
-  jwksURL: https://10.8.0.1:8443/.well-known/jwks.json   # served over identity's mTLS API
-  issuer: identity.flarex.io                             # must match the token's iss
-  audience: mdm.flarex.io                                # add this to identity's jwt.audiences
+  jwksURL: https://identity.flarex.io/.well-known/jwks.json  # public JWKS (system trust)
+  issuer: identity.flarex.io                                 # must match the token's iss
+  audience: mdm.flarex.io                                    # add this to identity's jwt.audiences

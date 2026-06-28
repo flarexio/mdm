@@ -170,6 +170,8 @@ func run(ctx context.Context, cmd *cli.Command) error {
 		logger.Info("enrollment endpoint enabled at POST /enroll/{subject}")
 	}
 	admin.Handle("POST /enqueue/{subject}", protect(transhttp.EnqueueHandler(svc)))
+	admin.Handle("GET /enrollments", protect(transhttp.EnrollmentsHandler(svc)))
+	admin.Handle("GET /enrollments/{subject}", protect(transhttp.EnrollmentHandler(svc)))
 
 	adminSrv := &http.Server{Addr: fmt.Sprintf(":%d", cmd.Int("port")), Handler: admin}
 	go serve(logger, "admin", func() error { return adminSrv.ListenAndServe() })
@@ -265,28 +267,16 @@ func buildVerifier(cfg *conf.Config, logger *zap.Logger) (auth.Verifier, error) 
 		return nil, nil
 	}
 
-	cert, roots, err := identityMTLS(cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				Certificates: []tls.Certificate{cert},
-				RootCAs:      roots,
-				MinVersion:   tls.VersionTLS12,
-			},
-		},
-	}
+	// JWKS is public data served over identity's public (Let's Encrypt) endpoint,
+	// so fetch it over normal system-trust TLS — no client certificate needed.
+	client := &http.Client{Timeout: 10 * time.Second}
 
 	logger.Info("admin token verification enabled", zap.String("jwks", cfg.Auth.JWKSURL))
 	return auth.NewJWKSVerifier(cfg.Auth.JWKSURL, cfg.Auth.Issuer, cfg.Auth.Audience, client), nil
 }
 
 // identityMTLS loads the client certificate and trust roots used to reach
-// identity's mTLS endpoints (challenge generation and JWKS).
+// identity's mTLS challenge-generation endpoint.
 func identityMTLS(cfg *conf.Config) (tls.Certificate, *x509.CertPool, error) {
 	cert, err := tls.LoadX509KeyPair(resolve(cfg.Path, cfg.Identity.Cert), resolve(cfg.Path, cfg.Identity.Key))
 	if err != nil {
