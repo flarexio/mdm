@@ -1,0 +1,6 @@
+.git
+.github
+certs/
+run/
+config.yaml
+*.local.yaml
