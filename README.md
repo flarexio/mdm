@@ -23,6 +23,8 @@ flarexio/identity + Step-CA          mdm-server (this repo)
 裝置憑證的取得**不在本服務**:identity 發 challenge、Step-CA 簽憑證。mdm-server
 只在組 enrollment profile 時向 identity 要一個 challenge 塞進 SCEP payload。
 
+完整架構決策與實戰踩坑見 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
+
 ## 架構
 
 ### 分層（Clean Architecture / Ports & Adapters）
