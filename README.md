@@ -87,7 +87,8 @@ identity/          對 flarexio/identity 的 client：取 SCEP challenge（走 m
 auth/              admin endpoint 的 bearer token 驗證（identity JWKS, EdDSA）+ OPA 授權
 conf/              config.yaml 載入
 transport/http/    mTLS 身分中介層、/checkin、/server、/enroll、/enqueue、/enrollments
-persistence/inmem/ 記憶體實作（enrollment repo、command queue）
+persistence/inmem/ 記憶體實作（command queue；測試用）
+persistence/badger/ enrollment repo 的 BadgerDB 持久化（重啟存活）
 ```
 
 ## 怎麼跑
@@ -193,8 +194,9 @@ go test ./...
   identity.apple.com）。一張憑證共用、推給所有裝置，裝置以各自的 token 區分。
 - **TLS 終結**：裝置身分可來自 `r.TLS.PeerCertificates`（直連 / L4 passthrough）或反向代理
   轉發的 header。本服務預設讀 `r.TLS`，身分來源以 `IdentityFunc` 介面預留可替換。
-- **儲存**：`persistence/inmem` 適合單實例/開發；水平擴展時換共享 backend（Redis / DB），
-  介面不變。
+- **儲存**：enrollment 用 **BadgerDB**（`persistence/badger`，資料在 `<path>/db`，重啟存活）；
+  command queue 仍 in-memory（命令掉了重 enqueue 即可）。水平擴展時換共享 backend
+  （Redis / DB），介面（`enrollment.Repository`、`command.Queue`）不變。
 
 ## License
 

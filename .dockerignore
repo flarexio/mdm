@@ -4,3 +4,4 @@ certs/
 run/
 config.yaml
 *.local.yaml
+db/
