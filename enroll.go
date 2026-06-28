@@ -26,6 +26,8 @@ type Enroller interface {
 	Profile(ctx context.Context, subject string) ([]byte, error)
 }
 
+type EnrollerMiddleware func(Enroller) Enroller
+
 func NewEnroller(challenger identity.Challenger, cfg EnrollConfig) Enroller {
 	return &enroller{challenger: challenger, cfg: cfg}
 }

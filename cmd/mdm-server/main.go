@@ -148,13 +148,16 @@ func run(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	// The core service: the composition of all the layers.
+	// The core service: the composition of all the layers, wrapped in the logging
+	// middleware so every service call is traced.
 	svc := mdm.NewService(enrollments, commands, pusher)
+	svc = mdm.LoggingMiddleware(logger)(svc)
 
 	enroller, err := buildEnroller(cfg, topic)
 	if err != nil {
 		return err
 	}
+	enroller = mdm.EnrollerLoggingMiddleware(logger)(enroller)
 
 	authz, err := buildAuthz(ctx, cfg, buildVerifier(cfg, logger), logger)
 	if err != nil {
