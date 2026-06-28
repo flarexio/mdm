@@ -155,6 +155,7 @@ func run(ctx context.Context, cmd *cli.Command) error {
 		admin.Handle("POST /enroll/{subject}", transhttp.EnrollHandler(enroller))
 		logger.Info("enrollment endpoint enabled at POST /enroll/{subject}")
 	}
+	admin.Handle("POST /enqueue/{subject}", transhttp.EnqueueHandler(svc))
 
 	adminSrv := &http.Server{Addr: fmt.Sprintf(":%d", cmd.Int("port")), Handler: admin}
 	go serve(logger, "admin", func() error { return adminSrv.ListenAndServe() })
