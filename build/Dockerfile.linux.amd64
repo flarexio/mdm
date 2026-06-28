@@ -2,7 +2,7 @@ FROM golang:1.26-alpine AS builder
 RUN apk add --no-cache git
 WORKDIR /src
 COPY . .
-RUN CGO_ENABLED=0 go build -o /mdm cmd/mdm-server/main.go
+RUN CGO_ENABLED=0 go build -o /mdm ./cmd/mdm-server
 
 FROM alpine:3.22
 COPY --from=builder /mdm /bin/mdm
