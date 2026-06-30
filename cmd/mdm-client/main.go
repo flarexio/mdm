@@ -37,6 +37,11 @@ func main() {
 				Usage:   "NATS user credentials file",
 				Sources: cli.EnvVars("NATS_CREDS"),
 			},
+			&cli.StringFlag{
+				Name:    "token",
+				Usage:   "admin JWT; if set, skips the token prompt",
+				Sources: cli.EnvVars("MDM_TOKEN"),
+			},
 			&cli.DurationFlag{
 				Name:  "timeout",
 				Usage: "how long to wait for a command response",
@@ -63,7 +68,7 @@ func run(ctx context.Context, c *cli.Command) error {
 	}
 	defer nc.Drain()
 
-	m := newModel(c.String("url"), nc, c.Duration("timeout"))
+	m := newModel(c.String("url"), c.String("token"), nc, c.Duration("timeout"))
 	_, err = tea.NewProgram(m, tea.WithContext(ctx)).Run()
 	return err
 }

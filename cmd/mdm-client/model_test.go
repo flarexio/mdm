@@ -9,7 +9,7 @@ import (
 )
 
 func TestRenderStates(t *testing.T) {
-	m := newModel("http://localhost", nil, 30*time.Second)
+	m := newModel("http://localhost", "", nil, 30*time.Second)
 	m.subject = "device-1"
 
 	for _, s := range []state{stateToken, stateDevices, stateCommand, stateQueries, stateWaiting} {
@@ -21,7 +21,7 @@ func TestRenderStates(t *testing.T) {
 }
 
 func TestResultView(t *testing.T) {
-	m := newModel("http://localhost", nil, time.Second)
+	m := newModel("http://localhost", "", nil, time.Second)
 	m.result = &command.RespondedEvent{
 		EnrollmentID: "device-1",
 		CommandUUID:  "uuid-1",

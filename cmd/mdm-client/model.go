@@ -76,7 +76,7 @@ type model struct {
 	err    error
 }
 
-func newModel(url string, nc *nats.Conn, timeout time.Duration) model {
+func newModel(url, token string, nc *nats.Conn, timeout time.Duration) model {
 	ti := textinput.New()
 	ti.Prompt = "❯ "
 	ti.Placeholder = "paste your admin token"
@@ -86,8 +86,9 @@ func newModel(url string, nc *nats.Conn, timeout time.Duration) model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 
-	return model{
+	m := model{
 		url:      url,
+		token:    token,
 		nc:       nc,
 		timeout:  timeout,
 		http:     &http.Client{Timeout: 15 * time.Second},
@@ -95,9 +96,16 @@ func newModel(url string, nc *nats.Conn, timeout time.Duration) model {
 		spinner:  sp,
 		selected: map[int]bool{},
 	}
+	if token != "" {
+		m.state = stateDevices // token from flag/env: skip the prompt
+	}
+	return m
 }
 
 func (m model) Init() tea.Cmd {
+	if m.state == stateDevices {
+		return m.fetchDevices() // token already provided
+	}
 	return textinput.Blink
 }
 
