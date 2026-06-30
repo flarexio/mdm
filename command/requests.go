@@ -21,10 +21,6 @@ func init() {
 			PIN:         stringValue(fields, "PIN"),
 		}, nil
 	})
-
-	Register(eraseDevice, func(fields map[string]any) (Request, error) {
-		return EraseDevice{PIN: stringValue(fields, "PIN")}, nil
-	})
 }
 
 // DeviceInformation queries the device for the named properties.
@@ -52,19 +48,6 @@ func (c DeviceLock) Fields() map[string]any {
 	fields := map[string]any{}
 	putString(fields, "Message", c.Message)
 	putString(fields, "PhoneNumber", c.PhoneNumber)
-	putString(fields, "PIN", c.PIN)
-	return fields
-}
-
-// EraseDevice wipes the device. PIN is required on macOS and ignored on iOS.
-type EraseDevice struct {
-	PIN string
-}
-
-func (EraseDevice) RequestType() RequestType { return eraseDevice }
-
-func (c EraseDevice) Fields() map[string]any {
-	fields := map[string]any{}
 	putString(fields, "PIN", c.PIN)
 	return fields
 }

@@ -30,7 +30,6 @@ type RequestType string
 const (
 	deviceInformation RequestType = "DeviceInformation"
 	deviceLock        RequestType = "DeviceLock"
-	eraseDevice       RequestType = "EraseDevice"
 )
 
 // Command is the generic MDM command envelope. Only CommandUUID and the nested
