@@ -24,14 +24,12 @@ var (
 // open-ended, and the string is the actual on-the-wire contract with Apple.
 type RequestType string
 
-// A few common request types, provided for readability. This list is deliberately
-// NOT exhaustive — the protocol grows, and RequestType accepts any value.
+// The request-type strings for the commands this server implements. They are
+// unexported: callers select a command through its typed Request (see registry.go
+// and requests.go), not by naming a RequestType string.
 const (
-	DeviceInformation RequestType = "DeviceInformation"
-	InstallProfile    RequestType = "InstallProfile"
-	RemoveProfile     RequestType = "RemoveProfile"
-	DeviceLock        RequestType = "DeviceLock"
-	EraseDevice       RequestType = "EraseDevice"
+	deviceInformation RequestType = "DeviceInformation"
+	deviceLock        RequestType = "DeviceLock"
 )
 
 // Command is the generic MDM command envelope. Only CommandUUID and the nested

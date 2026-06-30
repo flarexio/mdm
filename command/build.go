@@ -5,20 +5,21 @@ import (
 	"github.com/micromdm/plist"
 )
 
-// Build assembles a deliverable command from a RequestType and its type-specific
-// fields, assigning a fresh CommandUUID. fields are the payload that sits next to
-// RequestType inside the inner Command dict (e.g. Queries for DeviceInformation);
-// RequestType is set automatically and cannot be overridden.
+// Build assembles a deliverable command from a Request, assigning a fresh
+// CommandUUID. The Request supplies the type-specific Fields placed next to
+// RequestType inside the inner Command dict; RequestType comes from the Request
+// and cannot be overridden.
 //
 // The marshalled plist is kept in Raw, exactly as a decoded command would be, so
 // the queue and command channel treat built and device-bound commands alike.
-func Build(requestType RequestType, fields map[string]any) (*Command, error) {
+func Build(req Request) (*Command, error) {
+	requestType := req.RequestType()
 	if requestType == "" {
 		return nil, ErrInvalidCommand
 	}
 
 	inner := map[string]any{"RequestType": string(requestType)}
-	for k, v := range fields {
+	for k, v := range req.Fields() {
 		if k == "RequestType" {
 			continue
 		}

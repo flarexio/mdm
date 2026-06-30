@@ -12,7 +12,7 @@ import (
 
 func cmd(uuid string) *command.Command {
 	c := &command.Command{CommandUUID: uuid}
-	c.Command.RequestType = command.DeviceInformation
+	c.Command.RequestType = command.RequestType("DeviceInformation")
 	return c
 }
 

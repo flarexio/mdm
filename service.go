@@ -7,6 +7,8 @@ import (
 	"errors"
 	"time"
 
+	"github.com/flarexio/core/events"
+
 	"github.com/flarexio/mdm/checkin"
 	"github.com/flarexio/mdm/command"
 	"github.com/flarexio/mdm/enrollment"
@@ -194,16 +196,44 @@ func (svc *service) wake(id enrollment.ID) error {
 	return err
 }
 
-// Command runs one turn of the command/report loop. It records the incoming
-// result (Idle is a no-op in the queue) and returns the next command. skipNotNow
-// is set when the device just deferred a command, so the server does not re-offer
-// it in the same connection — it will be retried on the next poll.
+// Command runs one turn of the command/report loop: it records the incoming
+// result and returns the next command. A terminal result also emits a
+// command_responded event before the queue advances, so a publish failure leaves
+// the command to be retried rather than dropping the result.
 func (svc *service) Command(id enrollment.ID, result *command.Result) (*command.Command, error) {
+	if result.Status.IsTerminal() {
+		cmd, err := svc.commands.Find(string(id), result.CommandUUID)
+		if err != nil {
+			return nil, err
+		}
+		if err := svc.notifyResponse(id, result, cmd); err != nil {
+			return nil, err
+		}
+	}
+
 	if err := svc.commands.Report(string(id), result); err != nil {
 		return nil, err
 	}
 
 	return svc.commands.Next(string(id), result.Status == command.NotNow)
+}
+
+// notifyResponse decodes the result and publishes command_responded. cmd may be
+// nil (orphan): RequestType is then empty and no typed body is decoded.
+func (svc *service) notifyResponse(id enrollment.ID, result *command.Result, cmd *command.Command) error {
+	var requestType command.RequestType
+	if cmd != nil {
+		requestType = cmd.Command.RequestType
+	}
+
+	response, err := command.DecodeResponse(requestType, result.Raw)
+	if err != nil {
+		response = nil // a decode failure must not drop the event
+	}
+
+	store := events.NewEventStore()
+	store.AddEvent(command.NewRespondedEvent(string(id), result, requestType, response))
+	return store.Notify()
 }
 
 func (svc *service) Enrollments() ([]*enrollment.Enrollment, error) {

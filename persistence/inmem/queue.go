@@ -57,6 +57,18 @@ func (q *commandQueue) Next(enrollmentID string, skipNotNow bool) (*command.Comm
 	return nil, nil
 }
 
+func (q *commandQueue) Find(enrollmentID string, commandUUID string) (*command.Command, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	for _, qc := range q.queues[enrollmentID] {
+		if qc.cmd.CommandUUID == commandUUID {
+			return qc.cmd, nil
+		}
+	}
+	return nil, nil
+}
+
 func (q *commandQueue) Report(enrollmentID string, result *command.Result) error {
 	// Idle is a poll, not a result: nothing in the queue changes.
 	if result.Status == command.Idle {

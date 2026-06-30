@@ -34,7 +34,7 @@ func TestDecodeCommand(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "0001-deviceinfo", cmd.CommandUUID)
-	assert.Equal(t, command.DeviceInformation, cmd.Command.RequestType)
+	assert.Equal(t, command.RequestType("DeviceInformation"), cmd.Command.RequestType)
 	assert.NotEmpty(t, cmd.Raw, "raw plist should be preserved for type-specific handling")
 }
 

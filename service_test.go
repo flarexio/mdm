@@ -2,12 +2,14 @@ package mdm_test
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/flarexio/core/events"
+	"github.com/flarexio/core/pubsub"
 	"github.com/flarexio/mdm"
 	"github.com/flarexio/mdm/checkin"
 	"github.com/flarexio/mdm/command"
@@ -211,4 +213,76 @@ func TestEnqueueReconcilesOnUnregistered(t *testing.T) {
 	e, err := repo.Find(id)
 	require.NoError(t, err)
 	assert.Equal(t, enrollment.Removed, e.Status, "a dead token reconciles the enrollment to Removed")
+}
+
+// commandService builds a service wired so command_responded events publish to a
+// pubsub the test can subscribe to.
+func commandService(t *testing.T) (mdm.Service, pubsub.PubSub) {
+	t.Helper()
+
+	repo, err := inmem.NewEnrollmentRepository()
+	require.NoError(t, err)
+	cache, err := inmem.NewEnrollmentCache()
+	require.NoError(t, err)
+	queue, err := inmem.NewCommandQueue()
+	require.NoError(t, err)
+
+	ps := inmem.NewPubSub()
+	events.ReplaceGlobals(ps)
+
+	return mdm.NewService(repo, cache, queue, &fakePusher{}), ps
+}
+
+func deviceInfoResult(t *testing.T, uuid string) *command.Result {
+	t.Helper()
+	r, err := command.DecodeResult([]byte(`<plist version="1.0"><dict>
+		<key>CommandUUID</key><string>` + uuid + `</string>
+		<key>Status</key><string>Acknowledged</string>
+		<key>QueryResponses</key><dict><key>DeviceName</key><string>My iPhone</string></dict>
+	</dict></plist>`))
+	require.NoError(t, err)
+	return r
+}
+
+func TestCommand_EmitsRespondedEvent(t *testing.T) {
+	svc, ps := commandService(t)
+
+	var captured map[string]any
+	require.NoError(t, ps.Subscribe("commands.#", func(_ context.Context, msg *pubsub.Message) error {
+		return json.Unmarshal(msg.Data, &captured)
+	}))
+
+	const id enrollment.ID = "device-0001"
+	cmd, err := command.Build(command.DeviceInformation{Queries: []string{"DeviceName"}})
+	require.NoError(t, err)
+	require.NoError(t, svc.Enqueue(id, cmd))
+
+	_, err = svc.Command(id, deviceInfoResult(t, cmd.CommandUUID))
+	require.NoError(t, err)
+
+	require.NotNil(t, captured, "a terminal result must publish command_responded")
+	assert.Equal(t, string(id), captured["enrollment_id"])
+	assert.Equal(t, cmd.CommandUUID, captured["command_uuid"])
+	assert.Equal(t, "DeviceInformation", captured["request_type"])
+	assert.Equal(t, "Acknowledged", captured["status"])
+
+	resp, ok := captured["response"].(map[string]any)
+	require.True(t, ok, "the typed response must be carried")
+	qr, ok := resp["QueryResponses"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "My iPhone", qr["DeviceName"])
+}
+
+func TestCommand_IdleDoesNotEmit(t *testing.T) {
+	svc, ps := commandService(t)
+
+	var emitted bool
+	require.NoError(t, ps.Subscribe("commands.#", func(_ context.Context, _ *pubsub.Message) error {
+		emitted = true
+		return nil
+	}))
+
+	_, err := svc.Command("device-0001", &command.Result{Status: command.Idle})
+	require.NoError(t, err)
+	assert.False(t, emitted, "an Idle poll is not a result and must not emit an event")
 }

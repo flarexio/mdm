@@ -156,8 +156,10 @@ image `flarexio/mdm`,GitHub Actions build/release,config 走 `<path>/config.yaml
 - profile CMS 簽章(綠勾)、identity Verify 綁定 challenge↔subject(防 CN 冒充)、
   SCEP challenge TTL 調長(預設 5 分鐘,真機 UX 偏緊)。
 - **分散式收尾**:事件溯源 + NATS JetStream + Redis cache + Redis command queue 已就位。
-- **command 結果事件**:回應目前只推進 queue(`CommandUUID` 對應),結果內容沒交付出去。後續加
-  `command_responded` 事件(把 plist 解成 domain model 後再發,用 `CommandUUID` 對應請求方);
-  並先把 commands 收斂成一層抽象介面(有實作才能呼叫)。
+- **command 抽象 + 結果事件**(已完成):commands 收斂成 typed `Request` + registry(只有實作的能下);
+  結果 plist 解成 typed domain model(`DecodeResponse`,用命令的 `RequestType` 挑 decoder);terminal
+  結果發 `command_responded` 事件(在命令還在 queue 時發、發成功才推進,orphan 也照發),用
+  `CommandUUID` 對應請求方。**待補**:prod 要消費這個事件需加 `commands.>` 的 JetStream stream +
+  consumer(目前只發,沒人消費前不持久化)。
 - **TokenUpdate merge 語意**:目前直接覆蓋 `Push`;待落實 Apple「UnlockToken 沒帶別清、
   PushMagic 變才更新」(需在 aggregate 加 UnlockToken 欄位)。

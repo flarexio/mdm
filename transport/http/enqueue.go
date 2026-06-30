@@ -34,7 +34,15 @@ func EnqueueHandler(svc mdm.Service) http.HandlerFunc {
 			return
 		}
 
-		cmd, err := command.Build(req.RequestType, req.Command)
+		// Only an implemented command can be built: an unknown RequestType or
+		// invalid fields are rejected here rather than queued.
+		request, err := command.NewRequest(req.RequestType, req.Command)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		cmd, err := command.Build(request)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
