@@ -17,6 +17,7 @@ import (
 	"github.com/flarexio/mdm/push"
 
 	transhttp "github.com/flarexio/mdm/transport/http"
+	transpubsub "github.com/flarexio/mdm/transport/pubsub"
 )
 
 // nopPusher is a no-op Pusher for transport tests that do not exercise APNs.
@@ -62,7 +63,7 @@ func commandSetup(t *testing.T) (http.Handler, mdm.Service) {
 
 	handler, err := svc.Handler()
 	require.NoError(t, err)
-	require.NoError(t, mdm.RegisterEventHandler(ps, handler))
+	require.NoError(t, transpubsub.RegisterEventHandler(ps, handler))
 
 	h := transhttp.RequireIdentity(transhttp.ClientIdentity)(transhttp.CommandHandler(svc))
 

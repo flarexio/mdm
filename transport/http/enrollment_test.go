@@ -15,6 +15,7 @@ import (
 	"github.com/flarexio/mdm/persistence/inmem"
 
 	transhttp "github.com/flarexio/mdm/transport/http"
+	transpubsub "github.com/flarexio/mdm/transport/pubsub"
 )
 
 func enrollmentSetup(t *testing.T) mdm.Service {
@@ -34,7 +35,7 @@ func enrollmentSetup(t *testing.T) mdm.Service {
 
 	handler, err := svc.Handler()
 	require.NoError(t, err)
-	require.NoError(t, mdm.RegisterEventHandler(ps, handler))
+	require.NoError(t, transpubsub.RegisterEventHandler(ps, handler))
 
 	const id enrollment.ID = "device-0001"
 	require.NoError(t, svc.Authenticate(id, &checkin.Authenticate{

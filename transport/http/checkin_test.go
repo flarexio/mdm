@@ -18,6 +18,7 @@ import (
 	"github.com/flarexio/mdm/persistence/inmem"
 
 	transhttp "github.com/flarexio/mdm/transport/http"
+	transpubsub "github.com/flarexio/mdm/transport/pubsub"
 )
 
 const authenticatePlist = `<?xml version="1.0" encoding="UTF-8"?>
@@ -66,7 +67,7 @@ func mdmHandler(t *testing.T) (http.Handler, enrollment.Repository) {
 
 	handler, err := svc.Handler()
 	require.NoError(t, err)
-	require.NoError(t, mdm.RegisterEventHandler(ps, handler))
+	require.NoError(t, transpubsub.RegisterEventHandler(ps, handler))
 
 	h := transhttp.RequireIdentity(transhttp.ClientIdentity)(transhttp.CheckInHandler(svc))
 

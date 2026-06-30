@@ -14,6 +14,8 @@ import (
 	"github.com/flarexio/mdm/enrollment"
 	"github.com/flarexio/mdm/persistence/inmem"
 	"github.com/flarexio/mdm/push"
+
+	transpubsub "github.com/flarexio/mdm/transport/pubsub"
 )
 
 // fakePusher records the pushes the service makes and can be made to fail.
@@ -55,7 +57,7 @@ func newServiceWithPush(t *testing.T) (mdm.Service, enrollment.Repository, *fake
 
 	handler, err := svc.Handler()
 	require.NoError(t, err)
-	require.NoError(t, mdm.RegisterEventHandler(ps, handler))
+	require.NoError(t, transpubsub.RegisterEventHandler(ps, handler))
 
 	return svc, repo, pusher
 }

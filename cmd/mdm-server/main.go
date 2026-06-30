@@ -30,6 +30,7 @@ import (
 
 	badgerdb "github.com/flarexio/mdm/persistence/badger"
 	transhttp "github.com/flarexio/mdm/transport/http"
+	transpubsub "github.com/flarexio/mdm/transport/pubsub"
 )
 
 var (
@@ -170,7 +171,7 @@ func run(ctx context.Context, cmd *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	if err := mdm.RegisterEventHandler(ps, handler); err != nil {
+	if err := transpubsub.RegisterEventHandler(ps, handler); err != nil {
 		return err
 	}
 

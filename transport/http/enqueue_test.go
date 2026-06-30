@@ -16,6 +16,7 @@ import (
 	"github.com/flarexio/mdm/persistence/inmem"
 
 	transhttp "github.com/flarexio/mdm/transport/http"
+	transpubsub "github.com/flarexio/mdm/transport/pubsub"
 )
 
 func enqueueSetup(t *testing.T) (http.Handler, mdm.Service) {
@@ -35,7 +36,7 @@ func enqueueSetup(t *testing.T) (http.Handler, mdm.Service) {
 
 	handler, err := svc.Handler()
 	require.NoError(t, err)
-	require.NoError(t, mdm.RegisterEventHandler(ps, handler))
+	require.NoError(t, transpubsub.RegisterEventHandler(ps, handler))
 
 	return transhttp.EnqueueHandler(svc), svc
 }
