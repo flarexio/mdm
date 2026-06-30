@@ -26,7 +26,6 @@ import (
 	"github.com/flarexio/mdm/auth"
 	"github.com/flarexio/mdm/conf"
 	"github.com/flarexio/mdm/identity"
-	"github.com/flarexio/mdm/persistence/inmem"
 	"github.com/flarexio/mdm/push"
 
 	badgerdb "github.com/flarexio/mdm/persistence/badger"
@@ -154,7 +153,7 @@ func run(ctx context.Context, cmd *cli.Command) error {
 	}
 	defer cache.Close()
 
-	commands, err := inmem.NewCommandQueue()
+	commands, err := rediscache.NewCommandQueue(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
 	if err != nil {
 		return err
 	}
