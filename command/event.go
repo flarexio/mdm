@@ -2,14 +2,9 @@ package command
 
 import "time"
 
-// RespondedEvent is published when a device reports a command's terminal result.
-// It is the asynchronous delivery of the result to interested parties: the
-// original enqueue is fire-and-forget, and the result may return on a different
-// instance, so consumers correlate back by CommandUUID.
-//
-// Response is the typed domain model (nil for a command with no typed result, or
-// an orphan whose type is unknown); ErrorChain carries the device's error details
-// when Status is Error.
+// RespondedEvent delivers a command's terminal result to interested parties, who
+// correlate it back to the enqueued command by CommandUUID. Response is the typed
+// domain model (nil if none); ErrorChain is set when Status is Error.
 type RespondedEvent struct {
 	Domain       string       `json:"domain"`
 	EnrollmentID string       `json:"enrollment_id"`
