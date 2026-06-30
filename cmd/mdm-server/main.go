@@ -139,6 +139,15 @@ func run(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
+	// Instance name drives the NATS connection name and the per-instance durable
+	// consumer. In a Kubernetes StatefulSet each pod's hostname is its stable 0-based
+	// ordinal (mdm-0, mdm-1, ...), so fall back to it when config leaves name unset.
+	if cfg.Name == "" {
+		if cfg.Name, err = os.Hostname(); err != nil {
+			return err
+		}
+	}
+
 	// Infrastructure. Enrollments are durable (BadgerDB) so they survive a restart;
 	// the command queue is still in-memory (a lost command is simply re-enqueued).
 	enrollments, err := badgerdb.NewEnrollmentRepository(filepath.Join(path, "db"))
@@ -190,9 +199,11 @@ func run(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	// Per-instance consumer: every instance must see every event to build its own
-	// projection, so the consumer is named after this instance.
+	// projection, so the durable consumer is named after this instance (not a shared
+	// queue group). Durable carries the name JetStream actually persists.
 	eb := cfg.EventBus.Enrollments
 	eb.Consumer.Name = cfg.Name
+	eb.Consumer.Config.Durable = cfg.Name
 	if err := natsPS.AddStreamAndConsumer(natsCtx, eb); err != nil {
 		return err
 	}

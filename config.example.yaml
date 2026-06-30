@@ -1,8 +1,10 @@
 # Certificate paths are relative to --path (the working directory).
 
-# Instance name: used as the NATS connection name and the per-instance durable
-# JetStream consumer (each instance consumes every event to build its own copy).
-name: mdm-1
+# Instance name: the NATS connection name and the per-instance durable JetStream
+# consumer (each instance consumes every event to build its own copy). Leave empty
+# in Kubernetes: it falls back to the pod hostname, which a StatefulSet assigns as a
+# stable 0-based ordinal (mdm-0, mdm-1, ...).
+name: ""
 
 # FlareX root (may be a chain): verifies identity's server cert + device client
 # certs, and its self-signed root is embedded as the enrollment trust anchor.
@@ -28,7 +30,7 @@ eventBus:
           ]
         }
     consumer:
-      name: mdm-1
+      name: mdm-0        # overridden at runtime by the instance name (pod hostname)
       stream: ENROLLMENTS
       config: |
         {
