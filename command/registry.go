@@ -25,27 +25,6 @@ type Request interface {
 // JSON object), validating them in the process.
 type Factory func(fields map[string]any) (Request, error)
 
-var registry = map[RequestType]Factory{}
-
-// Register adds a command implementation to the registry, from an init() in the
-// file that defines the command. It panics on a duplicate registration.
-func Register(rt RequestType, f Factory) {
-	if _, exists := registry[rt]; exists {
-		panic(fmt.Sprintf("command: RequestType %q already registered", rt))
-	}
-	registry[rt] = f
-}
-
-// NewRequest builds the registered Request for rt from fields, or
-// ErrUnsupportedCommand if rt has no implementation.
-func NewRequest(rt RequestType, fields map[string]any) (Request, error) {
-	f, ok := registry[rt]
-	if !ok {
-		return nil, fmt.Errorf("%w: %q", ErrUnsupportedCommand, rt)
-	}
-	return f(fields)
-}
-
 // ResponseDecoder decodes a command's result plist into its typed domain model.
 // A device result carries no RequestType, so the decoder is selected by the
 // RequestType of the command the result correlates to (by CommandUUID).
@@ -53,15 +32,33 @@ type ResponseDecoder interface {
 	DecodeResponse(raw []byte) (any, error)
 }
 
-var responseDecoders = map[RequestType]ResponseDecoder{}
+// entry is one command's implementation: how to build it and, optionally, how to
+// decode its result.
+type entry struct {
+	factory  Factory
+	response ResponseDecoder // nil when the command has no typed result
+}
 
-// RegisterResponse registers the typed-result decoder for a command, from the
-// same init() that registers the command. It panics on a duplicate.
-func RegisterResponse(rt RequestType, d ResponseDecoder) {
-	if _, exists := responseDecoders[rt]; exists {
-		panic(fmt.Sprintf("command: response for RequestType %q already registered", rt))
+var registry = map[RequestType]entry{}
+
+// Register adds a command implementation, from an init() in the file that defines
+// the command: factory builds the request from wire fields, response decodes its
+// result (nil if the command has no typed result). It panics on a duplicate.
+func Register(rt RequestType, factory Factory, response ResponseDecoder) {
+	if _, exists := registry[rt]; exists {
+		panic(fmt.Sprintf("command: RequestType %q already registered", rt))
 	}
-	responseDecoders[rt] = d
+	registry[rt] = entry{factory, response}
+}
+
+// NewRequest builds the registered Request for rt from fields, or
+// ErrUnsupportedCommand if rt has no implementation.
+func NewRequest(rt RequestType, fields map[string]any) (Request, error) {
+	e, ok := registry[rt]
+	if !ok {
+		return nil, fmt.Errorf("%w: %q", ErrUnsupportedCommand, rt)
+	}
+	return e.factory(fields)
 }
 
 // DecodeResponse decodes raw into the typed domain model for rt. It returns
@@ -69,9 +66,9 @@ func RegisterResponse(rt RequestType, d ResponseDecoder) {
 // no meaningful payload, or an orphan result whose command type is unknown — so
 // callers fall back to the generic Result (Status, ErrorChain).
 func DecodeResponse(rt RequestType, raw []byte) (any, error) {
-	d, ok := responseDecoders[rt]
-	if !ok {
+	e, ok := registry[rt]
+	if !ok || e.response == nil {
 		return nil, nil
 	}
-	return d.DecodeResponse(raw)
+	return e.response.DecodeResponse(raw)
 }

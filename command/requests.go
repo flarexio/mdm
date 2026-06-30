@@ -12,8 +12,7 @@ func init() {
 			return nil, fmt.Errorf("%w: DeviceInformation requires Queries", ErrInvalidCommand)
 		}
 		return DeviceInformation{Queries: queries}, nil
-	})
-	RegisterResponse(deviceInformation, DeviceInformation{})
+	}, DeviceInformation{})
 
 	Register(deviceLock, func(fields map[string]any) (Request, error) {
 		return DeviceLock{
@@ -21,7 +20,7 @@ func init() {
 			PhoneNumber: stringValue(fields, "PhoneNumber"),
 			PIN:         stringValue(fields, "PIN"),
 		}, nil
-	})
+	}, nil)
 }
 
 // DeviceInformation queries the device for the named properties.
