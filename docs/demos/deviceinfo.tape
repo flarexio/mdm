@@ -7,9 +7,9 @@
 #   - `mdm-client` on PATH (`go install ./cmd/mdm-client`), or change the launch
 #     line to `go run ./cmd/mdm-client`.
 #   - A real enrolled device that is awake / reachable.
-#   - Your admin JWT on the system clipboard before recording (the tape pastes it
-#     with Ctrl+V, so the token never appears in this file):
-#       printf %s "$JWT" | xclip -selection clipboard   # macOS: pbcopy
+#   - Your admin JWT in MDM_TOKEN when invoking vhs, so the token never appears in
+#     this tape and the prompt is skipped:
+#       MDM_TOKEN="$JWT" vhs docs/demos/deviceinfo.tape
 
 Output docs/demos/deviceinfo.gif
 
@@ -29,23 +29,17 @@ Show
 Type "mdm-client" Enter
 Sleep 2s
 
-# 1. Admin token — pasted from the clipboard with Ctrl+V (shown as ***), so the
-#    token never appears in this tape and there is nothing to revert.
-Ctrl+V
-Sleep 1s
-Enter
-Sleep 2s
-
-# 2. Device list — select the enrolled device (id + status only).
+# 1. Device list — MDM_TOKEN is set, so the token prompt is skipped; select the
+#    enrolled device (id + status only).
 Sleep 1s
 Enter
 Sleep 1500ms
 
-# 3. Command — DeviceInformation is the first entry.
+# 2. Command — DeviceInformation is the first entry.
 Enter
 Sleep 1s
 
-# 4. Pick non-identifying queries: OSVersion, ProductName, ModelName, BatteryLevel.
+# 3. Pick non-identifying queries: OSVersion, ProductName, ModelName, BatteryLevel.
 Down
 Space
 Down 2
@@ -57,7 +51,7 @@ Space
 Sleep 1500ms
 Enter
 
-# 5. Wait for the device to respond, then hold on the result.
+# 4. Wait for the device to respond, then hold on the result.
 #    Tune this to your device's round-trip; too short cuts off before the reply.
 Sleep 12s
 

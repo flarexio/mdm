@@ -21,19 +21,16 @@ vhs docs/demos/deviceinfo.tape   # docs/demos/deviceinfo.gif
 
 ## The admin token
 
-The tape pastes the token from the system clipboard with `Ctrl+V`, so the JWT
-never appears in the tape file (and there is nothing to revert). The TUI's masked
-input reads the clipboard, so the token shows on screen only as `***`. Copy your
-token before recording:
+`mdm-client` reads the admin JWT from `MDM_TOKEN` (or `--token`) and skips the
+token prompt when it is set, so the token never appears in the tape. Pass it on
+the `vhs` invocation — it is inherited by the recording shell:
 
 ```bash
-printf %s "$YOUR_ADMIN_JWT" | xclip -selection clipboard   # macOS: pbcopy
-vhs docs/demos/deviceinfo.tape
+MDM_TOKEN="$YOUR_ADMIN_JWT" vhs docs/demos/deviceinfo.tape
 ```
 
-`Ctrl+V` works because the recording machine has a clipboard. On a headless host
-without one, fall back to typing the token literally (`Type "<jwt>"`) and revert
-the tape afterwards.
+Nothing to paste, nothing to revert. Without `MDM_TOKEN`, the client shows the
+masked token prompt instead (normal interactive use).
 
 ## Privacy
 
