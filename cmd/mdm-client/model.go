@@ -103,6 +103,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m.handleKey(msg)
 
+	case tea.PasteMsg:
+		// Bracketed paste (e.g. pasting the token) arrives as its own message, not
+		// as key presses; forward it to the focused input.
+		if m.state == stateToken || m.state == stateSubject {
+			var cmd tea.Cmd
+			m.input, cmd = m.input.Update(msg)
+			return m, cmd
+		}
+		return m, nil
+
 	case spinner.TickMsg:
 		if m.state != stateWaiting {
 			return m, nil // stop ticking once the wait is over
