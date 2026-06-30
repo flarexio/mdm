@@ -21,13 +21,9 @@ type enrollmentCache struct {
 	ctx context.Context
 }
 
-// NewEnrollmentCache wraps a shared Redis client (the one every instance points at).
-func NewEnrollmentCache(rdb *redis.Client) (enrollment.Cache, error) {
-	return &enrollmentCache{rdb: rdb, ctx: context.Background()}, nil
-}
-
-// Open dials addr and returns the cache, failing fast if Redis is unreachable.
-func Open(addr, password string, db int) (enrollment.Cache, error) {
+// NewEnrollmentCache dials addr (the shared Redis every instance points at) and
+// returns the cache, failing fast if Redis is unreachable.
+func NewEnrollmentCache(addr, password string, db int) (enrollment.Cache, error) {
 	rdb := redis.NewClient(&redis.Options{Addr: addr, Password: password, DB: db})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -36,7 +32,7 @@ func Open(addr, password string, db int) (enrollment.Cache, error) {
 		return nil, err
 	}
 
-	return NewEnrollmentCache(rdb)
+	return &enrollmentCache{rdb: rdb, ctx: context.Background()}, nil
 }
 
 func key(id enrollment.ID) string { return enrollmentPrefix + id.String() }

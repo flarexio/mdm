@@ -77,9 +77,9 @@ POST /enroll (user token)
 - **bus = NATS JetStream**:正式以 NATS JetStream 跑(`cmd/mdm-server` 接 `AddJetStream` +
   `AddStreamAndConsumer` + `PullConsume`,`events.ReplaceGlobals` 讓 `Notify` 發到 NATS)。
   **consumer 是 per-instance**:durable 是各 instance 本機 badger,所以每個 instance 都要收到全部
-  事件、各自建副本,不能用共享 queue group。consumer durable name 取 `cfg.Name`,K8s StatefulSet
-  下 `name` 留空 → fallback 到 pod hostname(穩定的 0-based ordinal `mdm-0`/`mdm-1`…)。測試用
-  `inmem` 同步 pubsub(`Notify` 即 read-your-write),介面相同。
+  事件、各自建副本,不能用共享 queue group。consumer durable name 來自 config `name`(yaml 以
+  `$INSTANCE_NAME` 展開);K8s StatefulSet 把 `INSTANCE_NAME` 設成 pod name(穩定 0-based ordinal
+  `mdm-0`/`mdm-1`…)。測試用 `inmem` 同步 pubsub(`Notify` 即 read-your-write),介面相同。
 
 ## 6. 認證與授權(admin endpoints)
 

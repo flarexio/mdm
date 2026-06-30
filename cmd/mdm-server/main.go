@@ -139,15 +139,6 @@ func run(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	// Instance name drives the NATS connection name and the per-instance durable
-	// consumer. In a Kubernetes StatefulSet each pod's hostname is its stable 0-based
-	// ordinal (mdm-0, mdm-1, ...), so fall back to it when config leaves name unset.
-	if cfg.Name == "" {
-		if cfg.Name, err = os.Hostname(); err != nil {
-			return err
-		}
-	}
-
 	// Infrastructure. Enrollments are durable (BadgerDB) so they survive a restart;
 	// the command queue is still in-memory (a lost command is simply re-enqueued).
 	enrollments, err := badgerdb.NewEnrollmentRepository(filepath.Join(path, "db"))
@@ -157,7 +148,7 @@ func run(ctx context.Context, cmd *cli.Command) error {
 	defer enrollments.Close()
 
 	// Shared strong-consistency cache (Redis), bridging the durable repo's lag.
-	cache, err := rediscache.Open(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
+	cache, err := rediscache.NewEnrollmentCache(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
 	if err != nil {
 		return err
 	}
@@ -198,17 +189,15 @@ func run(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	// Per-instance consumer: every instance must see every event to build its own
-	// projection, so the durable consumer is named after this instance (not a shared
-	// queue group). Durable carries the name JetStream actually persists.
-	eb := cfg.EventBus.Enrollments
-	eb.Consumer.Name = cfg.Name
-	eb.Consumer.Config.Durable = cfg.Name
-	if err := natsPS.AddStreamAndConsumer(natsCtx, eb); err != nil {
+	// Per-instance durable consumer: every instance consumes every event to build its
+	// own projection (not a shared queue group). Its name comes from config
+	// ($INSTANCE_NAME), so each pod gets a distinct, stable durable.
+	en := cfg.EventBus.Enrollments
+	if err := natsPS.AddStreamAndConsumer(natsCtx, en); err != nil {
 		return err
 	}
 
-	consumer := pubsub.ConsumerStreamPair{Consumer: eb.Consumer.Name, Stream: eb.Consumer.Stream}
+	consumer := pubsub.ConsumerStreamPair{Consumer: en.Consumer.Name, Stream: en.Consumer.Stream}
 	if err := natsPS.PullConsume(consumer, transpubsub.EventHandler(handler)); err != nil {
 		return err
 	}

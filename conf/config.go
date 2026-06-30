@@ -76,7 +76,7 @@ func LoadConfig(path string) (*Config, error) {
 	defer f.Close()
 
 	var cfg Config
-	if err := yaml.NewDecoder(f).Decode(&cfg); err != nil {
+	if err := yaml.NewDecoder(NewEnvExpandedReader(f)).Decode(&cfg); err != nil {
 		return nil, err
 	}
 
