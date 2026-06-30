@@ -9,6 +9,16 @@ is delegated to external services**: `flarexio/identity` issues one-time SCEP
 challenges and Step-CA signs the certificates. NanoMDM remains the reference for
 a production-grade core; each module here mirrors its corresponding design.
 
+## Demo
+
+`mdm-client` — pick a device, send DeviceInformation, and watch the typed
+response arrive over NATS:
+
+![DeviceInformation](docs/demos/deviceinfo.gif)
+
+> Generated from the VHS tape in [`docs/demos/`](docs/demos/) — see that folder to
+> record or re-record it.
+
 ## 邊界:管理平面 vs 身分平面
 
 ```

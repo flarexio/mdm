@@ -36,7 +36,7 @@ func (m model) render() string {
 		default:
 			b.WriteString("Choose a device:\n")
 			for i, d := range m.devices {
-				label := fmt.Sprintf("%s (%s, %s)", d.ID, d.Status, d.UDID)
+				label := fmt.Sprintf("%s (%s)", d.ID, d.Status)
 				fmt.Fprintf(&b, "%s\n", option(i == m.deviceCursor, label))
 			}
 			fmt.Fprintf(&b, "\n%s", hintStyle.Render("↑/↓ move · enter select · q quit"))
