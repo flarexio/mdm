@@ -2,6 +2,31 @@ package command
 
 import "fmt"
 
+func init() {
+	Register(deviceInformation, func(fields map[string]any) (Request, error) {
+		queries, err := stringSlice(fields, "Queries")
+		if err != nil {
+			return nil, err
+		}
+		if len(queries) == 0 {
+			return nil, fmt.Errorf("%w: DeviceInformation requires Queries", ErrInvalidCommand)
+		}
+		return DeviceInformation{Queries: queries}, nil
+	})
+
+	Register(deviceLock, func(fields map[string]any) (Request, error) {
+		return DeviceLock{
+			Message:     stringValue(fields, "Message"),
+			PhoneNumber: stringValue(fields, "PhoneNumber"),
+			PIN:         stringValue(fields, "PIN"),
+		}, nil
+	})
+
+	Register(eraseDevice, func(fields map[string]any) (Request, error) {
+		return EraseDevice{PIN: stringValue(fields, "PIN")}, nil
+	})
+}
+
 // DeviceInformation queries the device for the named properties.
 type DeviceInformation struct {
 	Queries []string
@@ -42,31 +67,6 @@ func (c EraseDevice) Fields() map[string]any {
 	fields := map[string]any{}
 	putString(fields, "PIN", c.PIN)
 	return fields
-}
-
-func init() {
-	Register(deviceInformation, func(fields map[string]any) (Request, error) {
-		queries, err := stringSlice(fields, "Queries")
-		if err != nil {
-			return nil, err
-		}
-		if len(queries) == 0 {
-			return nil, fmt.Errorf("%w: DeviceInformation requires Queries", ErrInvalidCommand)
-		}
-		return DeviceInformation{Queries: queries}, nil
-	})
-
-	Register(deviceLock, func(fields map[string]any) (Request, error) {
-		return DeviceLock{
-			Message:     stringValue(fields, "Message"),
-			PhoneNumber: stringValue(fields, "PhoneNumber"),
-			PIN:         stringValue(fields, "PIN"),
-		}, nil
-	})
-
-	Register(eraseDevice, func(fields map[string]any) (Request, error) {
-		return EraseDevice{PIN: stringValue(fields, "PIN")}, nil
-	})
 }
 
 // putString adds key=v to fields only when v is non-empty, so optional fields are
