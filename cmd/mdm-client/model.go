@@ -23,12 +23,20 @@ type state int
 
 const (
 	stateToken state = iota
-	stateSubject
+	stateDevices
 	stateCommand
 	stateQueries
 	stateWaiting
 	stateResult
 )
+
+// device is one row from GET /enrollments.
+type device struct {
+	ID      string `json:"id"`
+	UDID    string `json:"udid"`
+	Status  string `json:"status"`
+	CanPush bool   `json:"can_push"`
+}
 
 // commandsList are the commands the client offers; they must be registered on
 // the server (see command.Register).
@@ -53,6 +61,9 @@ type model struct {
 
 	token   string
 	subject string
+
+	devices      []device
+	deviceCursor int
 
 	cmdCursor int
 
@@ -90,6 +101,7 @@ func (m model) Init() tea.Cmd {
 	return textinput.Blink
 }
 
+type devicesMsg struct{ devices []device }
 type enqueuedMsg struct{ uuid string }
 type respondedMsg struct{ evt *command.RespondedEvent }
 type timeoutMsg struct{}
@@ -106,7 +118,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.PasteMsg:
 		// Bracketed paste (e.g. pasting the token) arrives as its own message, not
 		// as key presses; forward it to the focused input.
-		if m.state == stateToken || m.state == stateSubject {
+		if m.state == stateToken {
 			var cmd tea.Cmd
 			m.input, cmd = m.input.Update(msg)
 			return m, cmd
@@ -120,6 +132,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
+
+	case devicesMsg:
+		m.devices = msg.devices
+		m.deviceCursor = 0
+		return m, nil
 
 	case enqueuedMsg:
 		m.uuid = msg.uuid
@@ -137,7 +154,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case errMsg:
 		m.err = msg.err
-		m.state = stateResult
+		if m.state == stateWaiting {
+			m.state = stateResult // device-fetch errors stay on the picker for retry
+		}
 		return m, nil
 	}
 	return m, nil
@@ -151,28 +170,38 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.token = m.input.Value()
-			m.input.Reset()
-			m.input.EchoMode = textinput.EchoNormal
-			m.input.Placeholder = "device enrollment id (subject)"
-			m.state = stateSubject
-			return m, nil
+			m.state = stateDevices
+			return m, m.fetchDevices()
 		}
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
 		return m, cmd
 
-	case stateSubject:
-		if msg.String() == "enter" {
-			if strings.TrimSpace(m.input.Value()) == "" {
-				return m, nil
+	case stateDevices:
+		switch msg.String() {
+		case "q":
+			return m, tea.Quit
+		case "r":
+			if m.err != nil {
+				m.err = nil
+				m.devices = nil
+				return m, m.fetchDevices()
 			}
-			m.subject = strings.TrimSpace(m.input.Value())
-			m.state = stateCommand
-			return m, nil
+		case "up", "k":
+			if m.deviceCursor > 0 {
+				m.deviceCursor--
+			}
+		case "down", "j":
+			if m.deviceCursor < len(m.devices)-1 {
+				m.deviceCursor++
+			}
+		case "enter":
+			if len(m.devices) > 0 {
+				m.subject = m.devices[m.deviceCursor].ID
+				m.state = stateCommand
+			}
 		}
-		var cmd tea.Cmd
-		m.input, cmd = m.input.Update(msg)
-		return m, cmd
+		return m, nil
 
 	case stateCommand:
 		switch msg.String() {
@@ -242,6 +271,38 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m, nil
+}
+
+// fetchDevices lists the enrolled devices from the mdm admin endpoint.
+func (m model) fetchDevices() tea.Cmd {
+	url := m.url + "/enrollments"
+	token := m.token
+	client := m.http
+
+	return func() tea.Msg {
+		req, err := http.NewRequest(http.MethodGet, url, nil)
+		if err != nil {
+			return errMsg{err}
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return errMsg{err}
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			b, _ := io.ReadAll(resp.Body)
+			return errMsg{fmt.Errorf("list devices: %s: %s", resp.Status, strings.TrimSpace(string(b)))}
+		}
+
+		var devices []device
+		if err := json.NewDecoder(resp.Body).Decode(&devices); err != nil {
+			return errMsg{err}
+		}
+		return devicesMsg{devices: devices}
+	}
 }
 
 // enqueue POSTs the command to the mdm admin endpoint and returns its UUID.

@@ -23,9 +23,24 @@ func (m model) render() string {
 		fmt.Fprintf(&b, "Admin token:\n%s\n\n%s",
 			m.input.View(), hintStyle.Render("enter to continue · ctrl+c quit"))
 
-	case stateSubject:
-		fmt.Fprintf(&b, "Target device (enrollment id):\n%s\n\n%s",
-			m.input.View(), hintStyle.Render("enter to continue · ctrl+c quit"))
+	case stateDevices:
+		switch {
+		case m.err != nil:
+			fmt.Fprintf(&b, "%s\n\n%s",
+				errorStyle.Render("error: "+m.err.Error()),
+				hintStyle.Render("r retry · q quit"))
+		case m.devices == nil:
+			b.WriteString("Loading devices…")
+		case len(m.devices) == 0:
+			fmt.Fprintf(&b, "No enrolled devices.\n\n%s", hintStyle.Render("r retry · q quit"))
+		default:
+			b.WriteString("Choose a device:\n")
+			for i, d := range m.devices {
+				label := fmt.Sprintf("%s (%s, %s)", d.ID, d.Status, d.UDID)
+				fmt.Fprintf(&b, "%s\n", option(i == m.deviceCursor, label))
+			}
+			fmt.Fprintf(&b, "\n%s", hintStyle.Render("↑/↓ move · enter select · q quit"))
+		}
 
 	case stateCommand:
 		fmt.Fprintf(&b, "Device: %s\n\nChoose a command:\n", selStyle.Render(m.subject))

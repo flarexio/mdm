@@ -12,7 +12,7 @@ func TestRenderStates(t *testing.T) {
 	m := newModel("http://localhost", nil, 30*time.Second)
 	m.subject = "device-1"
 
-	for _, s := range []state{stateToken, stateSubject, stateCommand, stateQueries, stateWaiting} {
+	for _, s := range []state{stateToken, stateDevices, stateCommand, stateQueries, stateWaiting} {
 		m.state = s
 		if m.render() == "" {
 			t.Fatalf("state %d rendered empty", s)
