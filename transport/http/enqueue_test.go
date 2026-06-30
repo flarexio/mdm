@@ -58,7 +58,7 @@ func TestEnqueueHandler(t *testing.T) {
 	next, err := svc.Command(enrollment.ID("device-0001"), &command.Result{Status: command.Idle})
 	require.NoError(t, err)
 	require.NotNil(t, next)
-	assert.Equal(t, command.DeviceInformation, next.Command.RequestType)
+	assert.Equal(t, command.RequestType("DeviceInformation"), next.Command.RequestType)
 }
 
 func TestEnqueueHandler_BadRequestType(t *testing.T) {
