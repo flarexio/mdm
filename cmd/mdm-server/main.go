@@ -19,16 +19,16 @@ import (
 	"github.com/urfave/cli/v3"
 	"go.uber.org/zap"
 
+	"github.com/flarexio/core/events"
 	"github.com/flarexio/core/policy"
-
 	"github.com/flarexio/mdm"
 	"github.com/flarexio/mdm/auth"
 	"github.com/flarexio/mdm/conf"
 	"github.com/flarexio/mdm/identity"
-	badgerdb "github.com/flarexio/mdm/persistence/badger"
 	"github.com/flarexio/mdm/persistence/inmem"
 	"github.com/flarexio/mdm/push"
 
+	badgerdb "github.com/flarexio/mdm/persistence/badger"
 	transhttp "github.com/flarexio/mdm/transport/http"
 )
 
@@ -138,6 +138,14 @@ func run(ctx context.Context, cmd *cli.Command) error {
 	}
 	defer enrollments.Close()
 
+	// Strong-consistency bridge over the durable repo's lag (see enrollment.Cache);
+	// Redis in a scaled deployment.
+	cache, err := inmem.NewEnrollmentCache()
+	if err != nil {
+		return err
+	}
+	defer cache.Close()
+
 	commands, err := inmem.NewCommandQueue()
 	if err != nil {
 		return err
@@ -148,10 +156,23 @@ func run(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
+	// Event sourcing: check-in methods Notify(), the subscribed handler does the
+	// durable Store. Synchronous pubsub single-node; NATS in a scaled deployment.
+	ps := inmem.NewPubSub()
+	events.ReplaceGlobals(ps)
+
 	// The core service: the composition of all the layers, wrapped in the logging
 	// middleware so every service call is traced.
-	svc := mdm.NewService(enrollments, commands, pusher)
+	svc := mdm.NewService(enrollments, cache, commands, pusher)
 	svc = mdm.LoggingMiddleware(logger)(svc)
+
+	handler, err := svc.Handler()
+	if err != nil {
+		return err
+	}
+	if err := mdm.RegisterEventHandler(ps, handler); err != nil {
+		return err
+	}
 
 	enroller, err := buildEnroller(cfg, topic)
 	if err != nil {

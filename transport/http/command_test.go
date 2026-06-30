@@ -9,11 +9,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/flarexio/core/events"
 	"github.com/flarexio/mdm"
 	"github.com/flarexio/mdm/command"
 	"github.com/flarexio/mdm/enrollment"
 	"github.com/flarexio/mdm/persistence/inmem"
 	"github.com/flarexio/mdm/push"
+
 	transhttp "github.com/flarexio/mdm/transport/http"
 )
 
@@ -50,8 +52,18 @@ func commandSetup(t *testing.T) (http.Handler, mdm.Service) {
 	require.NoError(t, err)
 	queue, err := inmem.NewCommandQueue()
 	require.NoError(t, err)
+	cache, err := inmem.NewEnrollmentCache()
+	require.NoError(t, err)
 
-	svc := mdm.NewService(repo, queue, nopPusher{})
+	ps := inmem.NewPubSub()
+	events.ReplaceGlobals(ps)
+
+	svc := mdm.NewService(repo, cache, queue, nopPusher{})
+
+	handler, err := svc.Handler()
+	require.NoError(t, err)
+	require.NoError(t, mdm.RegisterEventHandler(ps, handler))
+
 	h := transhttp.RequireIdentity(transhttp.ClientIdentity)(transhttp.CommandHandler(svc))
 
 	return h, svc
