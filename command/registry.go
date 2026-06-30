@@ -45,3 +45,33 @@ func NewRequest(rt RequestType, fields map[string]any) (Request, error) {
 	}
 	return f(fields)
 }
+
+// ResponseDecoder decodes a command's result plist into its typed domain model.
+// A device result carries no RequestType, so the decoder is selected by the
+// RequestType of the command the result correlates to (by CommandUUID).
+type ResponseDecoder interface {
+	DecodeResponse(raw []byte) (any, error)
+}
+
+var responseDecoders = map[RequestType]ResponseDecoder{}
+
+// RegisterResponse registers the typed-result decoder for a command, from the
+// same init() that registers the command. It panics on a duplicate.
+func RegisterResponse(rt RequestType, d ResponseDecoder) {
+	if _, exists := responseDecoders[rt]; exists {
+		panic(fmt.Sprintf("command: response for RequestType %q already registered", rt))
+	}
+	responseDecoders[rt] = d
+}
+
+// DecodeResponse decodes raw into the typed domain model for rt. It returns
+// (nil, nil) when rt has no registered response decoder — an acknowledgement with
+// no meaningful payload, or an orphan result whose command type is unknown — so
+// callers fall back to the generic Result (Status, ErrorChain).
+func DecodeResponse(rt RequestType, raw []byte) (any, error) {
+	d, ok := responseDecoders[rt]
+	if !ok {
+		return nil, nil
+	}
+	return d.DecodeResponse(raw)
+}

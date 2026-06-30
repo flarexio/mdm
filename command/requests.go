@@ -13,6 +13,7 @@ func init() {
 		}
 		return DeviceInformation{Queries: queries}, nil
 	})
+	RegisterResponse(deviceInformation, DeviceInformation{})
 
 	Register(deviceLock, func(fields map[string]any) (Request, error) {
 		return DeviceLock{
