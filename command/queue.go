@@ -28,4 +28,9 @@ type Queue interface {
 	//   - NotNow: the command is kept (marked) for a later retry.
 	//   - any terminal status: the command is removed.
 	Report(enrollmentID string, result *Result) error
+
+	// Find returns the queued command with the given CommandUUID, or nil if no such
+	// command is queued. It lets a caller recover a result's RequestType (to decode
+	// the typed response) before Report removes the command.
+	Find(enrollmentID string, commandUUID string) (*Command, error)
 }

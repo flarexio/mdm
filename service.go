@@ -7,6 +7,8 @@ import (
 	"errors"
 	"time"
 
+	"github.com/flarexio/core/events"
+
 	"github.com/flarexio/mdm/checkin"
 	"github.com/flarexio/mdm/command"
 	"github.com/flarexio/mdm/enrollment"
@@ -198,12 +200,46 @@ func (svc *service) wake(id enrollment.ID) error {
 // result (Idle is a no-op in the queue) and returns the next command. skipNotNow
 // is set when the device just deferred a command, so the server does not re-offer
 // it in the same connection — it will be retried on the next poll.
+//
+// A terminal result is also delivered to interested parties as a command_responded
+// event. It is emitted while the command is still queued (so a transient failure
+// leaves the command to be retried, not lost) and before the queue advances.
 func (svc *service) Command(id enrollment.ID, result *command.Result) (*command.Command, error) {
+	if result.Status.IsTerminal() {
+		cmd, err := svc.commands.Find(string(id), result.CommandUUID)
+		if err != nil {
+			return nil, err
+		}
+		if err := svc.notifyResponse(id, result, cmd); err != nil {
+			return nil, err
+		}
+	}
+
 	if err := svc.commands.Report(string(id), result); err != nil {
 		return nil, err
 	}
 
 	return svc.commands.Next(string(id), result.Status == command.NotNow)
+}
+
+// notifyResponse decodes the result into its typed domain model and publishes a
+// command_responded event. cmd may be nil (an orphan result whose command is no
+// longer queued); the RequestType is then empty and the response body is omitted.
+func (svc *service) notifyResponse(id enrollment.ID, result *command.Result, cmd *command.Command) error {
+	var requestType command.RequestType
+	if cmd != nil {
+		requestType = cmd.Command.RequestType
+	}
+
+	response, err := command.DecodeResponse(requestType, result.Raw)
+	if err != nil {
+		// A decode failure must not drop the event: emit it without the typed body.
+		response = nil
+	}
+
+	store := events.NewEventStore()
+	store.AddEvent(command.NewRespondedEvent(string(id), result, requestType, response))
+	return store.Notify()
 }
 
 func (svc *service) Enrollments() ([]*enrollment.Enrollment, error) {
