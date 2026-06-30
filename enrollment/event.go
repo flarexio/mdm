@@ -65,24 +65,30 @@ func NewEnrollmentAuthenticatedEvent(e *Enrollment) events.DomainEvent {
 	}
 }
 
+// EnrollmentTokenUpdatedEvent carries the full snapshot so the durable handler is
+// a plain idempotent Store, tolerant of cross-subject reordering.
 type EnrollmentTokenUpdatedEvent struct {
 	*Event
-	Push Push `json:"push"`
+	Enrollment Enrollment `json:"enrollment"`
+	Push       Push       `json:"push"`
 }
 
 func NewEnrollmentTokenUpdatedEvent(e *Enrollment) events.DomainEvent {
 	return &EnrollmentTokenUpdatedEvent{
-		Event: NewEvent(EnrollmentTokenUpdated, e),
-		Push:  e.Push,
+		Event:      NewEvent(EnrollmentTokenUpdated, e),
+		Enrollment: *e,
+		Push:       e.Push,
 	}
 }
 
 type EnrollmentCheckedOutEvent struct {
 	*Event
+	Enrollment Enrollment `json:"enrollment"`
 }
 
 func NewEnrollmentCheckedOutEvent(e *Enrollment) events.DomainEvent {
 	return &EnrollmentCheckedOutEvent{
-		Event: NewEvent(EnrollmentCheckedOut, e),
+		Event:      NewEvent(EnrollmentCheckedOut, e),
+		Enrollment: *e,
 	}
 }

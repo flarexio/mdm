@@ -7,12 +7,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/flarexio/core/events"
 	"github.com/flarexio/mdm"
 	"github.com/flarexio/mdm/checkin"
 	"github.com/flarexio/mdm/command"
 	"github.com/flarexio/mdm/enrollment"
 	"github.com/flarexio/mdm/persistence/inmem"
 	"github.com/flarexio/mdm/push"
+
+	transpubsub "github.com/flarexio/mdm/transport/pubsub"
 )
 
 // fakePusher records the pushes the service makes and can be made to fail.
@@ -37,11 +40,26 @@ func newServiceWithPush(t *testing.T) (mdm.Service, enrollment.Repository, *fake
 	repo, err := inmem.NewEnrollmentRepository()
 	require.NoError(t, err)
 
+	cache, err := inmem.NewEnrollmentCache()
+	require.NoError(t, err)
+
 	queue, err := inmem.NewCommandQueue()
 	require.NoError(t, err)
 
+	// Synchronous pubsub: the durable Store happens in the subscribed event
+	// handler, so Notify() is read-your-write and assertions on repo see the state
+	// immediately after a check-in call.
+	ps := inmem.NewPubSub()
+	events.ReplaceGlobals(ps)
+
 	pusher := &fakePusher{}
-	return mdm.NewService(repo, queue, pusher), repo, pusher
+	svc := mdm.NewService(repo, cache, queue, pusher)
+
+	handler, err := svc.Handler()
+	require.NoError(t, err)
+	require.NoError(t, transpubsub.RegisterEventHandler(ps, handler))
+
+	return svc, repo, pusher
 }
 
 // enroll runs a device through Authenticate + TokenUpdate so it is pushable.
@@ -117,13 +135,23 @@ func TestIdentityComesFromCertNotBody(t *testing.T) {
 	assert.Equal(t, "udid-the-device-claims", e.UDID, "body UDID is kept as data only")
 }
 
-func TestTokenUpdate_RequiresAuthenticateFirst(t *testing.T) {
-	svc, _ := newService(t)
+// TestTokenUpdate_UpsertsWithoutAuthenticate covers the orphan TokenUpdate: with
+// neither a durable record nor a cache entry, the service upserts from the
+// message rather than rejecting. Apple does not guarantee the device will resend
+// a TokenUpdate, and the mTLS certificate has already authenticated it.
+func TestTokenUpdate_UpsertsWithoutAuthenticate(t *testing.T) {
+	svc, repo := newService(t)
 
-	err := svc.TokenUpdate("never-authenticated", &checkin.TokenUpdate{
-		Push: checkin.Push{PushMagic: "M", Token: []byte{0x01}},
-	})
-	assert.ErrorIs(t, err, enrollment.ErrEnrollmentNotFound)
+	const id enrollment.ID = "never-authenticated"
+	require.NoError(t, svc.TokenUpdate(id, &checkin.TokenUpdate{
+		Enrollment: checkin.Enrollment{UDID: "UDID-orphan"},
+		Push:       checkin.Push{Topic: "com.apple.mgmt.External.x", PushMagic: "M", Token: []byte{0x01}},
+	}))
+
+	e, err := repo.Find(id)
+	require.NoError(t, err)
+	assert.Equal(t, enrollment.Enrolled, e.Status)
+	assert.True(t, e.CanPush())
 }
 
 func TestCheckOut_UnknownIsNoError(t *testing.T) {

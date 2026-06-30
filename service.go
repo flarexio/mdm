@@ -5,6 +5,7 @@ package mdm
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/flarexio/mdm/checkin"
 	"github.com/flarexio/mdm/command"
@@ -45,37 +46,71 @@ type Service interface {
 
 	// Enrollment returns a single enrollment by its ID.
 	Enrollment(id enrollment.ID) (*enrollment.Enrollment, error)
+
+	// Handler returns the durable projector that applies enrollment events to the
+	// Repository; the pubsub transport subscribes it.
+	Handler() (EventHandler, error)
+}
+
+// EventHandler applies enrollment events to the durable Repository: the eventual
+// half of the flow whose strong half is the Cache write-through. Each event
+// carries the full snapshot, so every handler is an idempotent Store.
+type EventHandler interface {
+	EnrollmentAuthenticatedHandler(e *enrollment.EnrollmentAuthenticatedEvent) error
+	EnrollmentTokenUpdatedHandler(e *enrollment.EnrollmentTokenUpdatedEvent) error
+	EnrollmentCheckedOutHandler(e *enrollment.EnrollmentCheckedOutEvent) error
 }
 
 type ServiceMiddleware func(Service) Service
 
-func NewService(enrollments enrollment.Repository, commands command.Queue, pusher push.Pusher) Service {
-	return &service{enrollments, commands, pusher}
+// DefaultPendingTTL bounds an enrollment's life in the Cache: long enough to
+// outlast the lag before the durable Store catches up.
+const DefaultPendingTTL = 1 * time.Hour
+
+func NewService(
+	enrollments enrollment.Repository,
+	cache enrollment.Cache,
+	commands command.Queue,
+	pusher push.Pusher,
+) Service {
+	return &service{enrollments, cache, commands, pusher, DefaultPendingTTL}
 }
 
 type service struct {
-	enrollments enrollment.Repository
+	enrollments enrollment.Repository // durable SoR, written by the event handler (eventual)
+	cache       enrollment.Cache      // shared strong-consistency bridge (Redis)
 	commands    command.Queue
 	pusher      push.Pusher
+	pendingTTL  time.Duration
 }
 
-// Authenticate begins (or restarts) an enrollment. The identity is the cert's; the
-// message contributes only data such as the UDID.
-//
-// Persistence is synchronous here. In the full flarexio event-sourced deployment
-// the aggregate would be Notify()'d to the event bus and an EventHandler would do
-// the Store — that pubsub wiring is deferred to the module that adds NATS.
+// Authenticate begins an enrollment. It writes through to the Cache so the
+// immediately-following first TokenUpdate reads it back before the event-driven
+// durable Store catches up.
 func (svc *service) Authenticate(id enrollment.ID, msg *checkin.Authenticate) error {
 	e := enrollment.NewEnrollment(id, msg.UDID)
-	return svc.enrollments.Store(e)
+
+	if err := svc.cache.Store(e, svc.pendingTTL); err != nil {
+		return err
+	}
+
+	return e.Notify()
 }
 
-// TokenUpdate records the device's APNs push credentials and promotes it to
-// Enrolled. It requires a prior Authenticate: the strict state machine makes the
-// lifecycle explicit. (A production server may instead upsert here for resilience.)
+// TokenUpdate stores the device's APNs credentials and promotes it to Enrolled.
+// It reads prior state from the durable store, then the Cache, and upserts if
+// neither has it: Apple may never resend a TokenUpdate, and the mTLS certificate
+// has already authenticated the device.
 func (svc *service) TokenUpdate(id enrollment.ID, msg *checkin.TokenUpdate) error {
 	e, err := svc.enrollments.Find(id)
-	if err != nil {
+	if errors.Is(err, enrollment.ErrEnrollmentNotFound) {
+		e, err = svc.cache.Find(id)
+	}
+
+	switch {
+	case errors.Is(err, enrollment.ErrEnrollmentNotFound):
+		e = enrollment.NewEnrollment(id, msg.UDID) // upsert
+	case err != nil:
 		return err
 	}
 
@@ -85,11 +120,11 @@ func (svc *service) TokenUpdate(id enrollment.ID, msg *checkin.TokenUpdate) erro
 		Token:     msg.Token,
 	})
 
-	return svc.enrollments.Store(e)
+	return e.Notify()
 }
 
-// CheckOut marks the enrollment Removed. It is best-effort on the device's side, so
-// an unknown enrollment is not an error: there is simply nothing to remove.
+// CheckOut marks the enrollment Removed. Best-effort: an unknown enrollment is no
+// error. It reads the durable store only — teardown is outside the Cache's window.
 func (svc *service) CheckOut(id enrollment.ID, _ *checkin.CheckOut) error {
 	e, err := svc.enrollments.Find(id)
 	if err != nil {
@@ -100,10 +135,7 @@ func (svc *service) CheckOut(id enrollment.ID, _ *checkin.CheckOut) error {
 	}
 
 	e.CheckOut()
-
-	// Keep the record as Removed (soft delete) rather than dropping it, so the
-	// history of a device that left remains queryable.
-	return svc.enrollments.Store(e)
+	return e.Notify()
 }
 
 func (svc *service) CheckIn(id enrollment.ID, msg any) error {
@@ -127,12 +159,10 @@ func (svc *service) Enqueue(id enrollment.ID, cmd *command.Command) error {
 	return svc.wake(id)
 }
 
-// wake sends an APNs push so the device connects and pulls the queued command.
-//
-// It is tolerant: a device that is unknown or not yet pushable is skipped without
-// error — the command simply waits in the queue until the device next polls. A push
-// that reports the token is dead (Unregistered) reconciles the enrollment to
-// Removed, recovering the state a missing CheckOut would have left stale.
+// wake pushes the device so it pulls the queued command. It reads the durable
+// store only (the command channel deals with enrolled devices). Tolerant: an
+// unknown or not-yet-pushable device is skipped and the command waits for the
+// next poll. A dead token (Unregistered) reconciles the enrollment to Removed.
 func (svc *service) wake(id enrollment.ID) error {
 	e, err := svc.enrollments.Find(id)
 	if err != nil {
@@ -158,16 +188,16 @@ func (svc *service) wake(id enrollment.ID) error {
 	var apnsErr *push.Error
 	if errors.As(err, &apnsErr) && apnsErr.Unregistered() {
 		e.CheckOut()
-		return svc.enrollments.Store(e)
+		return e.Notify()
 	}
 
 	return err
 }
 
-// Command runs one turn of the command/report loop. It records the incoming result
-// (Idle is a no-op in the queue) and returns the next command. skipNotNow is set
-// when the device just deferred a command, so the server does not re-offer it in
-// the same connection — it will be retried on the next poll.
+// Command runs one turn of the command/report loop. It records the incoming
+// result (Idle is a no-op in the queue) and returns the next command. skipNotNow
+// is set when the device just deferred a command, so the server does not re-offer
+// it in the same connection — it will be retried on the next poll.
 func (svc *service) Command(id enrollment.ID, result *command.Result) (*command.Command, error) {
 	if err := svc.commands.Report(string(id), result); err != nil {
 		return nil, err
@@ -182,4 +212,22 @@ func (svc *service) Enrollments() ([]*enrollment.Enrollment, error) {
 
 func (svc *service) Enrollment(id enrollment.ID) (*enrollment.Enrollment, error) {
 	return svc.enrollments.Find(id)
+}
+
+// --- Event sourcing: the durable projection ---
+
+func (svc *service) Handler() (EventHandler, error) { return svc, nil }
+
+func (svc *service) EnrollmentAuthenticatedHandler(e *enrollment.EnrollmentAuthenticatedEvent) error {
+	return svc.enrollments.Store(&e.Enrollment)
+}
+
+func (svc *service) EnrollmentTokenUpdatedHandler(e *enrollment.EnrollmentTokenUpdatedEvent) error {
+	return svc.enrollments.Store(&e.Enrollment)
+}
+
+func (svc *service) EnrollmentCheckedOutHandler(e *enrollment.EnrollmentCheckedOutEvent) error {
+	// Soft delete: keep the Removed record (the snapshot has Status=Removed and
+	// DeletedAt set) so a departed device stays queryable.
+	return svc.enrollments.Store(&e.Enrollment)
 }

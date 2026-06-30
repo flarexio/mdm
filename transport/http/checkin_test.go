@@ -12,10 +12,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/flarexio/core/events"
 	"github.com/flarexio/mdm"
 	"github.com/flarexio/mdm/enrollment"
 	"github.com/flarexio/mdm/persistence/inmem"
+
 	transhttp "github.com/flarexio/mdm/transport/http"
+	transpubsub "github.com/flarexio/mdm/transport/pubsub"
 )
 
 const authenticatePlist = `<?xml version="1.0" encoding="UTF-8"?>
@@ -54,7 +57,18 @@ func mdmHandler(t *testing.T) (http.Handler, enrollment.Repository) {
 	queue, err := inmem.NewCommandQueue()
 	require.NoError(t, err)
 
-	svc := mdm.NewService(repo, queue, nopPusher{})
+	cache, err := inmem.NewEnrollmentCache()
+	require.NoError(t, err)
+
+	ps := inmem.NewPubSub()
+	events.ReplaceGlobals(ps)
+
+	svc := mdm.NewService(repo, cache, queue, nopPusher{})
+
+	handler, err := svc.Handler()
+	require.NoError(t, err)
+	require.NoError(t, transpubsub.RegisterEventHandler(ps, handler))
+
 	h := transhttp.RequireIdentity(transhttp.ClientIdentity)(transhttp.CheckInHandler(svc))
 
 	return h, repo

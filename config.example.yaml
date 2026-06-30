@@ -1,8 +1,41 @@
 # Certificate paths are relative to --path (the working directory).
 
+# Instance name: the NATS connection name and the per-instance durable JetStream
+# consumer (each instance consumes every event to build its own copy). Expanded from
+# the environment; in a Kubernetes StatefulSet set INSTANCE_NAME to the pod name,
+# the stable 0-based ordinal (mdm-0, mdm-1, ...).
+name: $INSTANCE_NAME
+
 # FlareX root (may be a chain): verifies identity's server cert + device client
 # certs, and its self-signed root is embedded as the enrollment trust anchor.
 ca: certs/ca.crt
+
+# Shared strong-consistency enrollment cache (bridges the durable store's lag).
+redis:
+  addr: redis:6379
+  password: ""
+  db: 0
+
+# NATS JetStream event bus. The stream captures all enrollment subjects; the
+# consumer is per-instance (set its name to this instance, see name above).
+eventBus:
+  enrollments:
+    stream:
+      name: ENROLLMENTS
+      config: |
+        {
+          "description": "mdm:enrollments",
+          "subjects": [
+            "enrollments.>"
+          ]
+        }
+    consumer:
+      name: $INSTANCE_NAME   # per-instance durable consumer (same as name above)
+      stream: ENROLLMENTS
+      config: |
+        {
+          "ack_policy": "explicit"
+        }
 
 push:
   cert: certs/push.pem

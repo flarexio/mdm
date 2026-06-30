@@ -5,15 +5,32 @@ import (
 	"os"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/flarexio/core/pubsub"
 )
 
 type Config struct {
 	Path     string   `yaml:"-"`
-	CA       string   `yaml:"ca"` // FlareX root: verifies identity's server cert + device client certs, and is the enrollment trust anchor
+	Name     string   `yaml:"name"` // instance name: NATS connection + per-instance durable consumer
+	CA       string   `yaml:"ca"`   // FlareX root: verifies identity's server cert + device client certs, and is the enrollment trust anchor
 	Push     Push     `yaml:"push"`
 	Identity Identity `yaml:"identity"`
 	Enroll   Enroll   `yaml:"enroll"`
 	Auth     Auth     `yaml:"auth"`
+	Redis    Redis    `yaml:"redis"`
+	EventBus EventBus `yaml:"eventBus"`
+}
+
+// Redis configures the shared strong-consistency enrollment cache.
+type Redis struct {
+	Addr     string `yaml:"addr"`
+	Password string `yaml:"password"`
+	DB       int    `yaml:"db"`
+}
+
+// EventBus configures the NATS JetStream stream and consumer for enrollment events.
+type EventBus struct {
+	Enrollments pubsub.StreamConsumer `yaml:"enrollments"`
 }
 
 // Auth configures bearer-token verification for the admin endpoints against
@@ -59,7 +76,7 @@ func LoadConfig(path string) (*Config, error) {
 	defer f.Close()
 
 	var cfg Config
-	if err := yaml.NewDecoder(f).Decode(&cfg); err != nil {
+	if err := yaml.NewDecoder(NewEnvExpandedReader(f)).Decode(&cfg); err != nil {
 		return nil, err
 	}
 

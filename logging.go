@@ -148,6 +148,71 @@ func (mw *loggingMiddleware) Enrollments() ([]*enrollment.Enrollment, error) {
 	return enrollments, nil
 }
 
+// Handler wraps the underlying projector so the durable event handlers are
+// traced too. These run asynchronously (under NATS, possibly on another
+// instance), so an unlogged Store failure would otherwise be silent.
+func (mw *loggingMiddleware) Handler() (EventHandler, error) {
+	next, err := mw.next.Handler()
+	if err != nil {
+		return nil, err
+	}
+
+	return &eventLoggingMiddleware{
+		mw.log.With(zap.String("component", "events")),
+		next,
+	}, nil
+}
+
+type eventLoggingMiddleware struct {
+	log  *zap.Logger
+	next EventHandler
+}
+
+func (mw *eventLoggingMiddleware) EnrollmentAuthenticatedHandler(e *enrollment.EnrollmentAuthenticatedEvent) error {
+	log := mw.log.With(
+		zap.String("event", e.EventName()),
+		zap.String("enrollment_id", e.EnrollmentID.String()),
+	)
+
+	if err := mw.next.EnrollmentAuthenticatedHandler(e); err != nil {
+		log.Error(err.Error())
+		return err
+	}
+
+	log.Info("enrollment projected")
+	return nil
+}
+
+func (mw *eventLoggingMiddleware) EnrollmentTokenUpdatedHandler(e *enrollment.EnrollmentTokenUpdatedEvent) error {
+	log := mw.log.With(
+		zap.String("event", e.EventName()),
+		zap.String("enrollment_id", e.EnrollmentID.String()),
+	)
+
+	if err := mw.next.EnrollmentTokenUpdatedHandler(e); err != nil {
+		log.Error(err.Error())
+		return err
+	}
+
+	log.Info("enrollment projected")
+	return nil
+}
+
+func (mw *eventLoggingMiddleware) EnrollmentCheckedOutHandler(e *enrollment.EnrollmentCheckedOutEvent) error {
+	log := mw.log.With(
+		zap.String("event", e.EventName()),
+		zap.String("enrollment_id", e.EnrollmentID.String()),
+	)
+
+	if err := mw.next.EnrollmentCheckedOutHandler(e); err != nil {
+		log.Error(err.Error())
+		return err
+	}
+
+	log.Info("enrollment projected")
+	return nil
+}
+
 func (mw *loggingMiddleware) Enrollment(id enrollment.ID) (*enrollment.Enrollment, error) {
 	log := mw.log.With(
 		zap.String("action", "enrollment"),

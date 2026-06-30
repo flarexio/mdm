@@ -9,11 +9,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/flarexio/core/events"
 	"github.com/flarexio/mdm"
 	"github.com/flarexio/mdm/command"
 	"github.com/flarexio/mdm/enrollment"
 	"github.com/flarexio/mdm/persistence/inmem"
+
 	transhttp "github.com/flarexio/mdm/transport/http"
+	transpubsub "github.com/flarexio/mdm/transport/pubsub"
 )
 
 func enqueueSetup(t *testing.T) (http.Handler, mdm.Service) {
@@ -23,8 +26,18 @@ func enqueueSetup(t *testing.T) (http.Handler, mdm.Service) {
 	require.NoError(t, err)
 	queue, err := inmem.NewCommandQueue()
 	require.NoError(t, err)
+	cache, err := inmem.NewEnrollmentCache()
+	require.NoError(t, err)
 
-	svc := mdm.NewService(repo, queue, nopPusher{})
+	ps := inmem.NewPubSub()
+	events.ReplaceGlobals(ps)
+
+	svc := mdm.NewService(repo, cache, queue, nopPusher{})
+
+	handler, err := svc.Handler()
+	require.NoError(t, err)
+	require.NoError(t, transpubsub.RegisterEventHandler(ps, handler))
+
 	return transhttp.EnqueueHandler(svc), svc
 }
 

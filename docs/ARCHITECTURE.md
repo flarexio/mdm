@@ -49,6 +49,38 @@ POST /enroll (user token)
 - **Command(`PUT /server`)**:非同步迴圈。一個請求**同時回報前一個結果 + 拿下一個命令**;
   佇列 FIFO,空 200 = 沒事了。`NotNow` 保留重試;APNs 回 410/Unregistered → 自動對帳成 Removed。
 
+## 5.1 一致性模型(分散式準備)
+
+為了未來水平擴展,enrollment 寫入走 **事件溯源 + 強一致快取橋接** 的混合模型:
+
+```
+寫: 動作 → 強一致寫 Redis Cache → Notify() 發事件 ─┐
+讀(durable): EventHandler 訂閱事件 → Store 進 durable repo(最終一致)
+```
+
+- **為何需要 Cache**:`Authenticate` 與**第一次** `TokenUpdate` 是裝置秒級、自動、可能落在
+  不同 instance 的連續握手;而 durable 由事件 handler 非同步寫入,有 lag。`Authenticate`
+  **同步寫 Redis(共享、強一致)**,讓緊接著的第一次 `TokenUpdate` 跨 instance 也讀得到。
+- **Cache 只給 check-in 握手用**:讀取邊界收得很窄——
+
+  | 方法 | 讀取來源 |
+  |---|---|
+  | `TokenUpdate` | durable → **Cache** → upsert(唯一有緊耦合 read-after-write 的訊息) |
+  | `Authenticate` | 只寫(建立) |
+  | `CheckOut` / `wake`(command) | **只讀 durable**(teardown / 已 enrolled 裝置,不在握手窗口) |
+
+- **upsert**:`TokenUpdate` 在 durable 與 Cache 都 miss 時,直接用訊息本身建 Enrolled。Apple
+  明文「**不保證重發 TokenUpdate**」,且 mTLS 憑證已驗過身分 → 寧可 upsert 也不 reject。
+- **Cache TTL**:只需撐過事件處理 lag(預設 1h);過期無害,因為 upsert 兜底。
+- **事件帶完整快照**:不同事件型別走不同 subject(`enrollments.<id>.<name>`),跨 subject 無
+  順序保證 → 事件自帶整個 enrollment 快照,handler 就是冪等 `Store`,容忍重送與亂序。
+- **bus = NATS JetStream**:正式以 NATS JetStream 跑(`cmd/mdm-server` 接 `AddJetStream` +
+  `AddStreamAndConsumer` + `PullConsume`,`events.ReplaceGlobals` 讓 `Notify` 發到 NATS)。
+  **consumer 是 per-instance**:durable 是各 instance 本機 badger,所以每個 instance 都要收到全部
+  事件、各自建副本,不能用共享 queue group。consumer durable name 來自 config `name`(yaml 以
+  `$INSTANCE_NAME` 展開);K8s StatefulSet 把 `INSTANCE_NAME` 設成 pod name(穩定 0-based ordinal
+  `mdm-0`/`mdm-1`…)。測試用 `inmem` 同步 pubsub(`Notify` 即 read-your-write),介面相同。
+
 ## 6. 認證與授權(admin endpoints)
 
 兩段:
@@ -87,15 +119,19 @@ device → Step-CA PKCSReq(challenge) → SCEPCHALLENGE webhook → identity.Ver
 
 ## 9. 持久化
 
-- **enrollment** → **BadgerDB**(`persistence/badger`,`<path>/db`,重啟存活)。
-- command queue → in-memory(掉了重 enqueue)。介面不變,水平擴展換共享 backend 即可。
+- **enrollment(durable)** → **BadgerDB**(`persistence/badger`,`<path>/db`,重啟存活),由
+  EventHandler 寫入(最終一致)。
+- **enrollment(cache)** → **Redis**(`persistence/redis`,正式用);測試用 in-memory
+  (`persistence/inmem`)。只放握手橋接,短 TTL,見 §5.1。
+- **command queue** → in-memory(掉了重 enqueue)。介面不變,水平擴展換共享 backend 即可。
 
 ## 10. 部署拓樸
 
 ```
 iPhone ──443/SNI── Traefik ──┬─ mdm.flarex.io(終結 TLS)──▶ mdm admin :8080
                               └─ device.mdm.flarex.io(passthrough)──▶ mdm mTLS :8443
-mdm ──mTLS──▶ identity :8443(取 challenge)   mdm ──▶ APNs(push)   mdm ──▶ Badger(<path>/db)
+mdm ──mTLS──▶ identity :8443(取 challenge)   mdm ──▶ APNs(push)
+mdm ──▶ Badger(<path>/db,durable)   mdm ──▶ Redis(cache)   mdm ──▶ NATS JetStream(event bus)
 ```
 image `flarexio/mdm`,GitHub Actions build/release,config 走 `<path>/config.yaml`(預設 `~/.flarex/mdm`)。
 
@@ -116,5 +152,8 @@ image `flarexio/mdm`,GitHub Actions build/release,config 走 `<path>/config.yaml
 ## 12. 未竟事項(皆 optional)
 
 - profile CMS 簽章(綠勾)、identity Verify 綁定 challenge↔subject(防 CN 冒充)、
-  command queue 持久化、SCEP challenge TTL 調長(預設 5 分鐘,真機 UX 偏緊)、
-  完整 flarexio 事件溯源(NATS event bus)。
+  SCEP challenge TTL 調長(預設 5 分鐘,真機 UX 偏緊)。
+- **分散式收尾**:事件溯源 + NATS JetStream + Redis cache 已就位;剩 command queue 待換成共享
+  backend(Redis List + processing list,Report/Next 原子化)。
+- **TokenUpdate merge 語意**:目前直接覆蓋 `Push`;待落實 Apple「UnlockToken 沒帶別清、
+  PushMagic 變才更新」(需在 aggregate 加 UnlockToken 欄位)。
