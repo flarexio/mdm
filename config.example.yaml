@@ -36,6 +36,27 @@ eventBus:
         {
           "ack_policy": "explicit"
         }
+  # command_responded events, retained for a consumer added later (none yet). The
+  # durable is shared (not per-instance): results are consumed once. max_age is in
+  # nanoseconds: 604800000000000 = 7 days.
+  commands:
+    stream:
+      name: COMMANDS
+      config: |
+        {
+          "description": "mdm:commands",
+          "subjects": [
+            "commands.>"
+          ],
+          "max_age": 604800000000000
+        }
+    consumer:
+      name: commands
+      stream: COMMANDS
+      config: |
+        {
+          "ack_policy": "explicit"
+        }
 
 push:
   cert: certs/push.pem

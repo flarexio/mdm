@@ -28,9 +28,10 @@ type Redis struct {
 	DB       int    `yaml:"db"`
 }
 
-// EventBus configures the NATS JetStream stream and consumer for enrollment events.
+// EventBus configures the NATS JetStream streams and consumers.
 type EventBus struct {
 	Enrollments pubsub.StreamConsumer `yaml:"enrollments"`
+	Commands    pubsub.StreamConsumer `yaml:"commands"`
 }
 
 // Auth configures bearer-token verification for the admin endpoints against
