@@ -28,9 +28,7 @@ type Redis struct {
 	DB       int    `yaml:"db"`
 }
 
-// EventBus configures the NATS JetStream streams and consumers. Enrollments is
-// consumed per-instance to build each instance's durable projection; Commands is
-// retained for a consumer added later (command_responded is producer-only for now).
+// EventBus configures the NATS JetStream streams and consumers.
 type EventBus struct {
 	Enrollments pubsub.StreamConsumer `yaml:"enrollments"`
 	Commands    pubsub.StreamConsumer `yaml:"commands"`

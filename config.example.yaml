@@ -36,11 +36,9 @@ eventBus:
         {
           "ack_policy": "explicit"
         }
-  # command_responded events. Retained (max_age) so a consumer added later can
-  # replay them; no consumer is pulled yet, and the durable is shared (not
-  # per-instance) because results are consumed once, not projected per instance.
-  # max_age is nanoseconds (jetstream.StreamConfig.MaxAge is a time.Duration):
-  # 604800000000000 = 7 days.
+  # command_responded events, retained for a consumer added later (none yet). The
+  # durable is shared (not per-instance): results are consumed once. max_age is in
+  # nanoseconds: 604800000000000 = 7 days.
   commands:
     stream:
       name: COMMANDS

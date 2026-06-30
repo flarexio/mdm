@@ -201,9 +201,8 @@ func run(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	// Commands stream: retain command_responded so a consumer added later can replay
-	// it. Producer-only for now — the stream is created (durability) but nothing is
-	// pulled yet.
+	// Commands stream: retain command_responded for a consumer added later. Nothing
+	// is pulled yet (producer-only).
 	if err := natsPS.AddStreamAndConsumer(natsCtx, cfg.EventBus.Commands); err != nil {
 		return err
 	}
