@@ -159,7 +159,8 @@ image `flarexio/mdm`,GitHub Actions build/release,config 走 `<path>/config.yaml
 - **command 抽象 + 結果事件**(已完成):commands 收斂成 typed `Request` + registry(只有實作的能下);
   結果 plist 解成 typed domain model(`DecodeResponse`,用命令的 `RequestType` 挑 decoder);terminal
   結果發 `command_responded` 事件(在命令還在 queue 時發、發成功才推進,orphan 也照發),用
-  `CommandUUID` 對應請求方。**待補**:prod 要消費這個事件需加 `commands.>` 的 JetStream stream +
-  consumer(目前只發,沒人消費前不持久化)。
+  `CommandUUID` 對應請求方。`commands.>` 已掛 `COMMANDS` JetStream stream(`max_age` 保留),事件
+  會持久化等 replay;durable 是**共享**的(結果消費一次,不像 enrollment 每台投影一份)。**待補**:
+  真正的 consumer(命令結果 projection / 通知)還沒接,現在只建 stream、沒 PullConsume。
 - **TokenUpdate merge 語意**:目前直接覆蓋 `Push`;待落實 Apple「UnlockToken 沒帶別清、
   PushMagic 變才更新」(需在 aggregate 加 UnlockToken 欄位)。

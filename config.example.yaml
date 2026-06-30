@@ -36,6 +36,27 @@ eventBus:
         {
           "ack_policy": "explicit"
         }
+  # command_responded events. Retained (max_age) so a consumer added later can
+  # replay them; no consumer is pulled yet, and the durable is shared (not
+  # per-instance) because results are consumed once, not projected per instance.
+  commands:
+    stream:
+      name: COMMANDS
+      config: |
+        {
+          "description": "mdm:commands",
+          "subjects": [
+            "commands.>"
+          ],
+          "max_age": 604800000000000
+        }
+    consumer:
+      name: commands
+      stream: COMMANDS
+      config: |
+        {
+          "ack_policy": "explicit"
+        }
 
 push:
   cert: certs/push.pem
