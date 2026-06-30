@@ -123,7 +123,9 @@ device → Step-CA PKCSReq(challenge) → SCEPCHALLENGE webhook → identity.Ver
   EventHandler 寫入(最終一致)。
 - **enrollment(cache)** → **Redis**(`persistence/redis`,正式用);測試用 in-memory
   (`persistence/inmem`)。只放握手橋接,短 TTL,見 §5.1。
-- **command queue** → in-memory(掉了重 enqueue)。介面不變,水平擴展換共享 backend 即可。
+- **command queue** → **Redis**(`persistence/redis`,正式用);測試用 in-memory。每個 enrollment
+  的 queue 存成單一 JSON value,用樂觀鎖(WATCH/MULTI)做原子 read-modify-write。沿用「peek 隊頭、
+  terminal 才移除」語意,所以可靠重投內建,不需 processing list / visibility timeout。
 
 ## 10. 部署拓樸
 
@@ -153,7 +155,9 @@ image `flarexio/mdm`,GitHub Actions build/release,config 走 `<path>/config.yaml
 
 - profile CMS 簽章(綠勾)、identity Verify 綁定 challenge↔subject(防 CN 冒充)、
   SCEP challenge TTL 調長(預設 5 分鐘,真機 UX 偏緊)。
-- **分散式收尾**:事件溯源 + NATS JetStream + Redis cache 已就位;剩 command queue 待換成共享
-  backend(Redis List + processing list,Report/Next 原子化)。
+- **分散式收尾**:事件溯源 + NATS JetStream + Redis cache + Redis command queue 已就位。
+- **command 結果事件**:回應目前只推進 queue(`CommandUUID` 對應),結果內容沒交付出去。後續加
+  `command_responded` 事件(把 plist 解成 domain model 後再發,用 `CommandUUID` 對應請求方);
+  並先把 commands 收斂成一層抽象介面(有實作才能呼叫)。
 - **TokenUpdate merge 語意**:目前直接覆蓋 `Push`;待落實 Apple「UnlockToken 沒帶別清、
   PushMagic 變才更新」(需在 aggregate 加 UnlockToken 欄位)。
