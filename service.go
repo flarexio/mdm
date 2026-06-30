@@ -122,11 +122,6 @@ func (svc *service) TokenUpdate(id enrollment.ID, msg *checkin.TokenUpdate) erro
 		Token:     msg.Token,
 	})
 
-	// Refresh the Cache for a closely-following token refresh on another instance.
-	if err := svc.cache.Store(e, svc.pendingTTL); err != nil {
-		return err
-	}
-
 	return e.Notify()
 }
 
