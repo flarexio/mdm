@@ -5,6 +5,8 @@ package pubsub
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 
 	"github.com/flarexio/core/pubsub"
 
@@ -12,41 +14,44 @@ import (
 	"github.com/flarexio/mdm/enrollment"
 )
 
-// RegisterEventHandler subscribes h to the enrollment event subjects on ps, so a
-// Notify() from any instance is applied to that instance's durable Repository.
-// Topics mirror enrollment.Event.Topic(): enrollments.<id>.<name>.
-func RegisterEventHandler(ps pubsub.PubSub, h mdm.EventHandler) error {
-	subs := map[string]func([]byte) error{
-		"enrollments.*.authenticated": func(b []byte) error {
+// EventHandler routes an enrollment event to h by the event name in its subject
+// (enrollments.<id>.<name>). It is the MessageHandler handed to NATS PullConsume
+// or to an in-process Subscribe.
+func EventHandler(h mdm.EventHandler) pubsub.MessageHandler {
+	return func(_ context.Context, msg *pubsub.Message) error {
+		name := msg.Topic[strings.LastIndex(msg.Topic, ".")+1:]
+
+		switch name {
+		case "authenticated":
 			var e enrollment.EnrollmentAuthenticatedEvent
-			if err := json.Unmarshal(b, &e); err != nil {
+			if err := json.Unmarshal(msg.Data, &e); err != nil {
 				return err
 			}
 			return h.EnrollmentAuthenticatedHandler(&e)
-		},
-		"enrollments.*.token_updated": func(b []byte) error {
+
+		case "token_updated":
 			var e enrollment.EnrollmentTokenUpdatedEvent
-			if err := json.Unmarshal(b, &e); err != nil {
+			if err := json.Unmarshal(msg.Data, &e); err != nil {
 				return err
 			}
 			return h.EnrollmentTokenUpdatedHandler(&e)
-		},
-		"enrollments.*.checked_out": func(b []byte) error {
+
+		case "checked_out":
 			var e enrollment.EnrollmentCheckedOutEvent
-			if err := json.Unmarshal(b, &e); err != nil {
+			if err := json.Unmarshal(msg.Data, &e); err != nil {
 				return err
 			}
 			return h.EnrollmentCheckedOutHandler(&e)
-		},
-	}
 
-	for topic, apply := range subs {
-		if err := ps.Subscribe(topic, func(_ context.Context, msg *pubsub.Message) error {
-			return apply(msg.Data)
-		}); err != nil {
-			return err
+		default:
+			return fmt.Errorf("unknown event subject %q", msg.Topic)
 		}
 	}
+}
 
-	return nil
+// RegisterEventHandler subscribes h to every enrollment subject on ps. It suits
+// the in-process pubsub (single-node, tests); the NATS path uses EventHandler with
+// PullConsume instead.
+func RegisterEventHandler(ps pubsub.PubSub, h mdm.EventHandler) error {
+	return ps.Subscribe("enrollments.#", EventHandler(h))
 }

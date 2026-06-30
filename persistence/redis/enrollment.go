@@ -26,6 +26,19 @@ func NewEnrollmentCache(rdb *redis.Client) (enrollment.Cache, error) {
 	return &enrollmentCache{rdb: rdb, ctx: context.Background()}, nil
 }
 
+// Open dials addr and returns the cache, failing fast if Redis is unreachable.
+func Open(addr, password string, db int) (enrollment.Cache, error) {
+	rdb := redis.NewClient(&redis.Options{Addr: addr, Password: password, DB: db})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		return nil, err
+	}
+
+	return NewEnrollmentCache(rdb)
+}
+
 func key(id enrollment.ID) string { return enrollmentPrefix + id.String() }
 
 func (c *enrollmentCache) Store(e *enrollment.Enrollment, ttl time.Duration) error {

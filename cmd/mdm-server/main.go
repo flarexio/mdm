@@ -21,6 +21,7 @@ import (
 
 	"github.com/flarexio/core/events"
 	"github.com/flarexio/core/policy"
+	"github.com/flarexio/core/pubsub"
 	"github.com/flarexio/mdm"
 	"github.com/flarexio/mdm/auth"
 	"github.com/flarexio/mdm/conf"
@@ -29,6 +30,7 @@ import (
 	"github.com/flarexio/mdm/push"
 
 	badgerdb "github.com/flarexio/mdm/persistence/badger"
+	rediscache "github.com/flarexio/mdm/persistence/redis"
 	transhttp "github.com/flarexio/mdm/transport/http"
 	transpubsub "github.com/flarexio/mdm/transport/pubsub"
 )
@@ -97,6 +99,12 @@ func main() {
 				Value:   8443,
 				Sources: cli.EnvVars("MDM_MTLS_PORT"),
 			},
+			&cli.StringFlag{
+				Name:    "nats",
+				Usage:   "NATS server URL for the event bus",
+				Value:   "wss://nats.flarex.io",
+				Sources: cli.EnvVars("NATS_URL"),
+			},
 		},
 		Action: run,
 	}
@@ -139,9 +147,8 @@ func run(ctx context.Context, cmd *cli.Command) error {
 	}
 	defer enrollments.Close()
 
-	// Strong-consistency bridge over the durable repo's lag (see enrollment.Cache);
-	// Redis in a scaled deployment.
-	cache, err := inmem.NewEnrollmentCache()
+	// Shared strong-consistency cache (Redis), bridging the durable repo's lag.
+	cache, err := rediscache.Open(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
 	if err != nil {
 		return err
 	}
@@ -157,11 +164,6 @@ func run(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	// Event sourcing: check-in methods Notify(), the subscribed handler does the
-	// durable Store. Synchronous pubsub single-node; NATS in a scaled deployment.
-	ps := inmem.NewPubSub()
-	events.ReplaceGlobals(ps)
-
 	// The core service: the composition of all the layers, wrapped in the logging
 	// middleware so every service call is traced.
 	svc := mdm.NewService(enrollments, cache, commands, pusher)
@@ -171,9 +173,36 @@ func run(ctx context.Context, cmd *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	if err := transpubsub.RegisterEventHandler(ps, handler); err != nil {
+
+	// Event sourcing over NATS JetStream: check-in methods Notify(); a per-instance
+	// durable consumer applies each event to this instance's BadgerDB projection.
+	natsCtx, cancelNATS := context.WithTimeout(ctx, 30*time.Second)
+	defer cancelNATS()
+
+	natsPS, err := pubsub.NewNATSPubSub(cmd.String("nats"), cfg.Name, resolve(cfg.Path, "user.creds"))
+	if err != nil {
 		return err
 	}
+	defer natsPS.Close()
+
+	if err := natsPS.AddJetStream(); err != nil {
+		return err
+	}
+
+	// Per-instance consumer: every instance must see every event to build its own
+	// projection, so the consumer is named after this instance.
+	eb := cfg.EventBus.Enrollments
+	eb.Consumer.Name = cfg.Name
+	if err := natsPS.AddStreamAndConsumer(natsCtx, eb); err != nil {
+		return err
+	}
+
+	consumer := pubsub.ConsumerStreamPair{Consumer: eb.Consumer.Name, Stream: eb.Consumer.Stream}
+	if err := natsPS.PullConsume(consumer, transpubsub.EventHandler(handler)); err != nil {
+		return err
+	}
+
+	events.ReplaceGlobals(natsPS)
 
 	enroller, err := buildEnroller(cfg, topic)
 	if err != nil {

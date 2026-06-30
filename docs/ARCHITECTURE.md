@@ -74,8 +74,11 @@ POST /enroll (user token)
 - **Cache TTL**:只需撐過事件處理 lag(預設 1h);過期無害,因為 upsert 兜底。
 - **事件帶完整快照**:不同事件型別走不同 subject(`enrollments.<id>.<name>`),跨 subject 無
   順序保證 → 事件自帶整個 enrollment 快照,handler 就是冪等 `Store`,容忍重送與亂序。
-- **pubsub 抽換**:單機用同步 in-process pubsub(`Notify` 即 read-your-write);多節點換 NATS,
-  domain 不動。
+- **bus = NATS JetStream**:正式以 NATS JetStream 跑(`cmd/mdm-server` 接 `AddJetStream` +
+  `AddStreamAndConsumer` + `PullConsume`,`events.ReplaceGlobals` 讓 `Notify` 發到 NATS)。
+  **consumer 是 per-instance**(名字取 `cfg.Name`):durable 是各 instance 本機 badger,所以每個
+  instance 都要收到全部事件、各自建副本,不能用共享 queue group。測試用 `inmem` 同步 pubsub
+  (`Notify` 即 read-your-write),介面相同。
 
 ## 6. 認證與授權(admin endpoints)
 
@@ -117,8 +120,8 @@ device → Step-CA PKCSReq(challenge) → SCEPCHALLENGE webhook → identity.Ver
 
 - **enrollment(durable)** → **BadgerDB**(`persistence/badger`,`<path>/db`,重啟存活),由
   EventHandler 寫入(最終一致)。
-- **enrollment(cache)** → in-memory(`persistence/inmem`),分散式換 **Redis**
-  (`persistence/redis`)。只放握手橋接,短 TTL,見 §5.1。
+- **enrollment(cache)** → **Redis**(`persistence/redis`,正式用);測試用 in-memory
+  (`persistence/inmem`)。只放握手橋接,短 TTL,見 §5.1。
 - **command queue** → in-memory(掉了重 enqueue)。介面不變,水平擴展換共享 backend 即可。
 
 ## 10. 部署拓樸
@@ -126,7 +129,8 @@ device → Step-CA PKCSReq(challenge) → SCEPCHALLENGE webhook → identity.Ver
 ```
 iPhone ──443/SNI── Traefik ──┬─ mdm.flarex.io(終結 TLS)──▶ mdm admin :8080
                               └─ device.mdm.flarex.io(passthrough)──▶ mdm mTLS :8443
-mdm ──mTLS──▶ identity :8443(取 challenge)   mdm ──▶ APNs(push)   mdm ──▶ Badger(<path>/db)
+mdm ──mTLS──▶ identity :8443(取 challenge)   mdm ──▶ APNs(push)
+mdm ──▶ Badger(<path>/db,durable)   mdm ──▶ Redis(cache)   mdm ──▶ NATS JetStream(event bus)
 ```
 image `flarexio/mdm`,GitHub Actions build/release,config 走 `<path>/config.yaml`(預設 `~/.flarex/mdm`)。
 
@@ -148,7 +152,7 @@ image `flarexio/mdm`,GitHub Actions build/release,config 走 `<path>/config.yaml
 
 - profile CMS 簽章(綠勾)、identity Verify 綁定 challenge↔subject(防 CN 冒充)、
   SCEP challenge TTL 調長(預設 5 分鐘,真機 UX 偏緊)。
-- **分散式收尾**:事件溯源已就位(單機同步 pubsub);多節點待接 NATS event bus + Redis cache,
-  並把 command queue 換成共享 backend(Redis List + processing list,Report/Next 原子化)。
+- **分散式收尾**:事件溯源 + NATS JetStream + Redis cache 已就位;剩 command queue 待換成共享
+  backend(Redis List + processing list,Report/Next 原子化)。
 - **TokenUpdate merge 語意**:目前直接覆蓋 `Push`;待落實 Apple「UnlockToken 沒帶別清、
   PushMagic 變才更新」(需在 aggregate 加 UnlockToken 欄位)。
