@@ -93,3 +93,40 @@ func DecodeResult(raw []byte) (*Result, error) {
 
 	return &r, nil
 }
+
+// CommandResult is the typed domain model for a device's command response. It holds
+// the decoded, type-specific payload extracted from the result plist — no raw plist
+// bytes travel on the event bus.
+type CommandResult struct {
+	CommandUUID string         `json:"command_uuid"`
+	Status      Status         `json:"status"`
+	ErrorChain  []ErrorChain   `json:"error_chain,omitempty"`
+	Payload     map[string]any `json:"payload,omitempty"`
+}
+
+// DecodeCommandResult converts a wire-format Result into a typed CommandResult by
+// stripting the known envelope fields (Status, CommandUUID, UDID) and keeping the
+// remaining type-specific payload. Best-effort: a parse failure still returns a
+// populated CommandResult without Payload.
+func DecodeCommandResult(result *Result) (*CommandResult, error) {
+	cr := &CommandResult{
+		CommandUUID: result.CommandUUID,
+		Status:      result.Status,
+		ErrorChain:  result.ErrorChain,
+	}
+
+	if len(result.Raw) > 0 {
+		var payload map[string]any
+		if err := plist.Unmarshal(result.Raw, &payload); err != nil {
+			return cr, nil
+		}
+		delete(payload, "Status")
+		delete(payload, "CommandUUID")
+		delete(payload, "UDID")
+		if len(payload) > 0 {
+			cr.Payload = payload
+		}
+	}
+
+	return cr, nil
+}

@@ -38,7 +38,8 @@ func enqueueSetup(t *testing.T) (http.Handler, mdm.Service) {
 	require.NoError(t, err)
 	require.NoError(t, transpubsub.RegisterEventHandler(ps, handler))
 
-	return transhttp.EnqueueHandler(svc), svc
+	reg := command.NewRegistry()
+	return transhttp.EnqueueHandler(svc, reg), svc
 }
 
 func TestEnqueueHandler(t *testing.T) {

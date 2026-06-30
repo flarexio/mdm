@@ -7,6 +7,8 @@ import (
 	"errors"
 	"time"
 
+	"github.com/flarexio/core/events"
+
 	"github.com/flarexio/mdm/checkin"
 	"github.com/flarexio/mdm/command"
 	"github.com/flarexio/mdm/enrollment"
@@ -198,9 +200,23 @@ func (svc *service) wake(id enrollment.ID) error {
 // result (Idle is a no-op in the queue) and returns the next command. skipNotNow
 // is set when the device just deferred a command, so the server does not re-offer
 // it in the same connection — it will be retried on the next poll.
+//
+// A command_responded event is emitted for every non-Idle status, decoupled from
+// queue advancement: it fires even when the CommandUUID is no longer in the queue
+// (dedup/cleanup), and a publish failure does not affect the command loop.
 func (svc *service) Command(id enrollment.ID, result *command.Result) (*command.Command, error) {
 	if err := svc.commands.Report(string(id), result); err != nil {
 		return nil, err
+	}
+
+	if result.Status != command.Idle && result.CommandUUID != "" {
+		cr, err := command.DecodeCommandResult(result)
+		if err != nil {
+			return nil, err
+		}
+		store := events.NewEventStore()
+		store.AddEvent(command.NewCommandRespondedEvent(string(id), cr))
+		_ = store.Notify() // best-effort: queue advancement must not depend on event delivery
 	}
 
 	return svc.commands.Next(string(id), result.Status == command.NotNow)

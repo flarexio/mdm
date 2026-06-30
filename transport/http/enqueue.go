@@ -2,6 +2,7 @@ package http
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/flarexio/mdm"
@@ -20,7 +21,10 @@ type enqueueRequest struct {
 // It is an admin/integration entrypoint, separate from the device-facing mTLS
 // channels: the subject in the path is the enrollment ID (the device
 // certificate's CN), supplied by the operator rather than read from a client cert.
-func EnqueueHandler(svc mdm.Service) http.HandlerFunc {
+//
+// Only commands registered in reg can be invoked; an unknown RequestType is
+// rejected with a 400 before ever reaching the queue.
+func EnqueueHandler(svc mdm.Service, reg *command.Registry) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		subject := r.PathValue("subject")
 		if subject == "" {
@@ -34,9 +38,13 @@ func EnqueueHandler(svc mdm.Service) http.HandlerFunc {
 			return
 		}
 
-		cmd, err := command.Build(req.RequestType, req.Command)
+		cmd, err := reg.Build(req.RequestType, req.Command)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			code := http.StatusInternalServerError
+			if errors.Is(err, command.ErrUnknownCommand) {
+				code = http.StatusBadRequest
+			}
+			http.Error(w, err.Error(), code)
 			return
 		}
 

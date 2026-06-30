@@ -24,6 +24,7 @@ import (
 	"github.com/flarexio/core/pubsub"
 	"github.com/flarexio/mdm"
 	"github.com/flarexio/mdm/auth"
+	"github.com/flarexio/mdm/command"
 	"github.com/flarexio/mdm/conf"
 	"github.com/flarexio/mdm/identity"
 	"github.com/flarexio/mdm/push"
@@ -163,6 +164,9 @@ func run(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
+	// Command registry: only registered (implemented) commands can be invoked.
+	reg := command.NewRegistry()
+
 	// The core service: the composition of all the layers, wrapped in the logging
 	// middleware so every service call is traced.
 	svc := mdm.NewService(enrollments, cache, commands, pusher)
@@ -225,7 +229,7 @@ func run(ctx context.Context, cmd *cli.Command) error {
 	admin.Handle("POST /enroll", authz("mdm::enroll.issue")(transhttp.EnrollHandler(enroller)))
 
 	// Operator endpoints (admin role).
-	admin.Handle("POST /enqueue/{subject}", authz("mdm::commands.enqueue")(transhttp.EnqueueHandler(svc)))
+	admin.Handle("POST /enqueue/{subject}", authz("mdm::commands.enqueue")(transhttp.EnqueueHandler(svc, reg)))
 	admin.Handle("GET /enrollments", authz("mdm::enrollments.list")(transhttp.EnrollmentsHandler(svc)))
 	admin.Handle("GET /enrollments/{subject}", authz("mdm::enrollments.read")(transhttp.EnrollmentHandler(svc)))
 
