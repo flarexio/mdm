@@ -3,8 +3,9 @@
 /certs/
 
 # build artifacts — never build binaries into the repo root.
-# anchored with a leading slash so it does NOT ignore the cmd/mdm-server/ source dir.
+# anchored with a leading slash so it does NOT ignore the cmd/*/ source dirs.
 /mdm-server
+/mdm-client
 config.yaml
 *.db
 *.p8
