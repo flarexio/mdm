@@ -70,6 +70,7 @@ func newModel(url string, nc *nats.Conn, timeout time.Duration) model {
 	ti.Prompt = "❯ "
 	ti.Placeholder = "paste your admin token"
 	ti.EchoMode = textinput.EchoPassword // shows ***
+	ti.Focus()                           // focus now: Init() can't return a mutated model
 
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -86,7 +87,7 @@ func newModel(url string, nc *nats.Conn, timeout time.Duration) model {
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(textinput.Blink, m.input.Focus())
+	return textinput.Blink
 }
 
 type enqueuedMsg struct{ uuid string }
