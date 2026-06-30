@@ -12,7 +12,7 @@ ca: certs/ca.crt
 
 # Shared strong-consistency enrollment cache (bridges the durable store's lag).
 redis:
-  addr: localhost:6379
+  addr: redis:6379
   password: ""
   db: 0
 
