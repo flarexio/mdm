@@ -21,10 +21,19 @@ vhs docs/demos/deviceinfo.tape   # docs/demos/deviceinfo.gif
 
 ## The admin token
 
-`deviceinfo.tape` types a placeholder where the admin JWT goes. Before recording,
-replace `PASTE_ADMIN_JWT_HERE` with a real token; the TUI masks it on screen
-(`***`), but it sits in the tape **source** until you revert it. Record, then
-**revert the file** — do not commit the token.
+The tape pastes the token from the system clipboard with `Ctrl+V`, so the JWT
+never appears in the tape file (and there is nothing to revert). The TUI's masked
+input reads the clipboard, so the token shows on screen only as `***`. Copy your
+token before recording:
+
+```bash
+printf %s "$YOUR_ADMIN_JWT" | xclip -selection clipboard   # macOS: pbcopy
+vhs docs/demos/deviceinfo.tape
+```
+
+`Ctrl+V` works because the recording machine has a clipboard. On a headless host
+without one, fall back to typing the token literally (`Type "<jwt>"`) and revert
+the tape afterwards.
 
 ## Privacy
 

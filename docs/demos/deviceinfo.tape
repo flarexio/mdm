@@ -7,9 +7,9 @@
 #   - `mdm-client` on PATH (`go install ./cmd/mdm-client`), or change the launch
 #     line to `go run ./cmd/mdm-client`.
 #   - A real enrolled device that is awake / reachable.
-#   - Paste a real admin JWT where marked below, record, then REVERT this file —
-#     do NOT commit the token. It is masked on screen as ***, but it sits in the
-#     tape source until you revert.
+#   - Your admin JWT on the system clipboard before recording (the tape pastes it
+#     with Ctrl+V, so the token never appears in this file):
+#       printf %s "$JWT" | xclip -selection clipboard   # macOS: pbcopy
 
 Output docs/demos/deviceinfo.gif
 
@@ -29,8 +29,9 @@ Show
 Type "mdm-client" Enter
 Sleep 2s
 
-# 1. Admin token — paste a real JWT here (shown as ***). Revert after recording.
-Type "PASTE_ADMIN_JWT_HERE"
+# 1. Admin token — pasted from the clipboard with Ctrl+V (shown as ***), so the
+#    token never appears in this tape and there is nothing to revert.
+Ctrl+V
 Sleep 1s
 Enter
 Sleep 2s
